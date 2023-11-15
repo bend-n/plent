@@ -1,0 +1,44 @@
+[package]
+name = "plent"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+paste = "1.0.12"
+tokio = { version = "1.28.2", features = [
+  "net",
+  "sync",
+  "rt",
+  "parking_lot",
+], default-features = false }
+serenity = { version = "0.11.5", features = [
+  "builder",
+  "client",
+  "rustls_backend",
+  "gateway",
+], default-features = false }
+poise = { version = "0.5.5", default-features = false, features = [
+  "handle_panics",
+] }
+anyhow = "1.0.75"
+regex = { version = "1.8.4", features = ["std"], default-features = false }
+btparse = "0.1.1"
+mindus = { version = "5.0.7", features = [], default-features = false }
+flate2 = { version = "1.0", features = [
+  "cloudflare_zlib",
+], default-features = false }
+lemu = { features = ["diagnose"], default-features = false, version = "0.2.0" }
+dashmap = "5.5.3"
+oxipng = { version = "9.0.0", default-features = false }
+fimg = "0.4.26"
+phf = { version = "0.11.2", features = ["macros"] }
+
+[profile.release]
+strip = true
+lto = "thin"
+
+[profile.dev.package.mindus]
+opt-level = 3
+
+[profile.dev.package.fimg]
+opt-level = 3
