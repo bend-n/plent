@@ -39,6 +39,8 @@ lto = "thin"
 
 [profile.dev.package.mindus]
 opt-level = 3
+debug-assertions = false
 
 [profile.dev.package.fimg]
 opt-level = 3
+debug-assertions = false

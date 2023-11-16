@@ -27,7 +27,7 @@ pub async fn run(
                 v.run();
                 v.output()
             })
-            .map_err(|e| format!("{}", e.diagnose(&block.code)).replace("`", "\u{200b}`"))
+            .map_err(|e| format!("{}", e.diagnose(&block.code)).replace('`', "\u{200b}`"))
     })
     .await?
     {

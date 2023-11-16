@@ -1,4 +1,5 @@
 mod logic;
+mod map;
 mod schematic;
 
 use anyhow::Result;
@@ -57,23 +58,21 @@ impl Bot {
                                 {
                                     return Ok(());
                                 }
-                                if let ControlFlow::Break(m) = schematic::with(
-                                    Msg {
-                                        author: new_message
-                                            .author_nick(c)
-                                            .await
-                                            .unwrap_or(new_message.author.name.clone()),
-                                        attachments: new_message.attachments.clone(),
-                                        content: new_message.content.clone(),
-                                        channel: new_message.channel_id,
-                                    },
-                                    c,
-                                )
-                                .await?
-                                {
+                                let m = Msg {
+                                    author: new_message
+                                        .author_nick(c)
+                                        .await
+                                        .unwrap_or(new_message.author.name.clone()),
+                                    attachments: new_message.attachments.clone(),
+                                    content: new_message.content.clone(),
+                                    channel: new_message.channel_id,
+                                };
+                                if let ControlFlow::Break(m) = schematic::with(m, c).await? {
                                     d.tracker.insert(new_message.id, m);
                                     return Ok(());
                                 }
+                                // not tracked, as you cant add a attachment afterwwards.
+                                map::with(new_message, c).await?;
                             }
                             poise::Event::MessageUpdate { event, .. } => {
                                 let MessageUpdateEvent {
@@ -148,7 +147,6 @@ impl Bot {
                         }
                     });
                     Ok(Data { tracker })
-                    // todo: voting::fixall() auto
                 })
             });
         f.run().await.unwrap();
