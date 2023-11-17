@@ -220,9 +220,9 @@ checksum = "01c033212f55b799c43650c2fb12866ba8fe873e5786e7e649810c4dc9a76561"
 
 [[package]]
 name = "cloudflare-zlib-sys"
-version = "0.3.2"
+version = "0.3.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c03221eaad27d2fe22f530de824f3068664354453672695627b29179c565da89"
+checksum = "c3185ff8c69c53ab346d5ac89f418e194b997d48393cae321cb611dd05f83c90"
 dependencies = [
  "cc",
 ]
@@ -652,7 +652,7 @@ dependencies = [
  "futures-util",
  "http",
  "hyper",
- "rustls 0.21.8",
+ "rustls 0.21.9",
  "tokio",
  "tokio-rustls 0.24.1",
 ]
@@ -849,9 +849,9 @@ dependencies = [
 
 [[package]]
 name = "mindus"
-version = "5.0.10"
+version = "5.0.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a4c7d314106dc8eb8f3d3ca42cf2204787fc49835cdce3be4675e2fe413f8510"
+checksum = "96ed51e5d0563d8b12815cf722e05373e4c89cd844577103fb37f26a60d6951e"
 dependencies = [
  "amap",
  "base64 0.21.5",
@@ -1223,7 +1223,7 @@ dependencies = [
  "once_cell",
  "percent-encoding",
  "pin-project-lite",
- "rustls 0.21.8",
+ "rustls 0.21.9",
  "rustls-pemfile",
  "serde",
  "serde_json",
@@ -1321,9 +1321,9 @@ dependencies = [
 
 [[package]]
 name = "rustls"
-version = "0.21.8"
+version = "0.21.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "446e14c5cda4f3f30fe71863c34ec70f5ac79d6087097ad0bb433e1be5edf04c"
+checksum = "629648aced5775d558af50b2b4c7b02983a04b312126d45eeead26e7caa498b9"
 dependencies = [
  "log",
  "ring 0.17.5",
@@ -1728,7 +1728,7 @@ version = "0.24.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c28327cf380ac148141087fbfb9de9d7bd4e84ab5d2c28fbc911d753de8a7081"
 dependencies = [
- "rustls 0.21.8",
+ "rustls 0.21.9",
  "tokio",
 ]
 

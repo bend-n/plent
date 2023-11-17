@@ -18,6 +18,7 @@ async fn from_attachments(attchments: &[Attachment]) -> Result<Option<Schematic>
             let s = a.download().await?;
             let mut s = DataRead::new(&s);
             let Ok(s) = Schematic::deserialize(&mut s) else {
+                println!("failed to read {}", a.filename);
                 continue;
             };
             return Ok(Some(s));
@@ -27,6 +28,7 @@ async fn from_attachments(attchments: &[Attachment]) -> Result<Option<Schematic>
                 continue;
             };
             let Ok(s) = Schematic::deserialize_base64(&s) else {
+                println!("failed to read msg.txt");
                 continue;
             };
             return Ok(Some(s));
@@ -41,7 +43,9 @@ pub async fn with(m: Msg, c: &serenity::client::Context) -> Result<ControlFlow<M
         let d = v.tags.get("description").map(|t| crate::conv::replace(t));
         let name = crate::conv::replace(&strip_colors(v.tags.get("name").unwrap()));
         let cost = v.compute_total_cost().0;
+        println!("deser {name}");
         let p = tokio::task::spawn_blocking(move || to_png(&v)).await?;
+        println!("rend {name}");
         anyhow::Ok(
             m.channel
                 .send_message(c, |m| {
@@ -70,11 +74,9 @@ pub async fn with(m: Msg, c: &serenity::client::Context) -> Result<ControlFlow<M
     };
 
     if let Ok(Some(v)) = from_attachments(&m.attachments).await {
-        println!("sent {}", v.tags.get("name").unwrap());
         return Ok(ControlFlow::Break(send(v).await?));
     }
     if let Ok(v) = from_msg(&m.content) {
-        println!("sent {}", v.tags.get("name").unwrap());
         return Ok(ControlFlow::Break(send(v).await?));
     }
     Ok(ControlFlow::Continue(()))
