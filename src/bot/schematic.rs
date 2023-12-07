@@ -40,8 +40,8 @@ async fn from_attachments(attchments: &[Attachment]) -> Result<Option<Schematic>
 pub async fn with(m: Msg, c: &serenity::client::Context) -> Result<ControlFlow<Message, ()>> {
     let author = m.author;
     let send = |v: Schematic| async move {
-        let d = v.tags.get("description").map(|t| crate::conv::replace(t));
-        let name = crate::conv::replace(&strip_colors(v.tags.get("name").unwrap()));
+        let d = v.tags.get("description").map(|t| emoji::mindustry::to_discord(t));
+        let name = emoji::mindustry::to_discord(&strip_colors(v.tags.get("name").unwrap()));
         let cost = v.compute_total_cost().0;
         println!("deser {name}");
         let p = tokio::task::spawn_blocking(move || to_png(&v)).await?;
@@ -61,7 +61,7 @@ pub async fn with(m: Msg, c: &serenity::client::Context) -> Result<ControlFlow<M
                             if n == 0 {
                                 continue;
                             }
-                            write!(s, "{} {n} ", crate::conv::item(i)).unwrap();
+                            write!(s, "{} {n} ", emoji::mindustry::item(i)).unwrap();
                         }
                         e.field("req", s, true);
                         e.title(name)

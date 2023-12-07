@@ -32,6 +32,7 @@ dashmap = "5.5.3"
 oxipng = { version = "9.0.0", default-features = false }
 fimg = "0.4.26"
 phf = { version = "0.11.2", features = ["macros"] }
+emoji = { git = "https://github.com/Apricot-Conservation-Project/emoji", version = "0.1.0" }
 
 [profile.release]
 strip = true
