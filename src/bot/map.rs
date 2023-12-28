@@ -1,3 +1,4 @@
+
 use anyhow::Result;
 use mindus::{data::map::ReadError, *};
 use poise::serenity_prelude::*;
@@ -50,7 +51,7 @@ pub async fn with(msg: &Message, c: &serenity::client::Context) -> Result<()> {
             };
             let t = msg.channel_id.start_typing(&c.http)?;
             let deser_took = then.elapsed();
-            let name = strip_colors(m.tags.get("name").unwrap());
+            let name = strip_colors(m.tags.get("name").or(m.tags.get("name")).unwrap());
             let (render_took, compression_took, total, png) =
                 tokio::task::spawn_blocking(move || {
                     let render_took = Instant::now();
