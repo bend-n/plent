@@ -1,4 +1,3 @@
-
 use anyhow::Result;
 use mindus::{data::map::ReadError, *};
 use poise::serenity_prelude::*;

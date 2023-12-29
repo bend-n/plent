@@ -27,7 +27,7 @@ async fn from_attachments(attchments: &[Attachment]) -> Result<Option<Schematic>
             let Ok(s) = String::from_utf8(a.download().await?) else {
                 continue;
             };
-            let Ok(s) = Schematic::deserialize_base64(&s) else {
+            let Ok(s) = Schematic::deserialize_base64(s.trim()) else {
                 println!("failed to read msg.txt");
                 continue;
             };
@@ -40,7 +40,10 @@ async fn from_attachments(attchments: &[Attachment]) -> Result<Option<Schematic>
 pub async fn with(m: Msg, c: &serenity::client::Context) -> Result<ControlFlow<Message, ()>> {
     let author = m.author;
     let send = |v: Schematic| async move {
-        let d = v.tags.get("description").map(|t| emoji::mindustry::to_discord(t));
+        let d = v
+            .tags
+            .get("description")
+            .map(|t| emoji::mindustry::to_discord(&strip_colors(t)));
         let name = emoji::mindustry::to_discord(&strip_colors(v.tags.get("name").unwrap()));
         let cost = v.compute_total_cost().0;
         println!("deser {name}");
@@ -92,6 +95,7 @@ fn from_msg(msg: &str) -> Result<Schematic> {
         .ok_or(anyhow!("couldnt find schematic"))?
         .get(3)
         .unwrap()
-        .as_str();
+        .as_str()
+        .trim();
     Ok(Schematic::deserialize_base64(schem_text)?)
 }
