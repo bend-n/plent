@@ -7,10 +7,11 @@ use dashmap::DashMap;
 
 use poise::serenity_prelude::*;
 use serenity::model::channel::Message;
+use std::collections::HashSet;
 use std::fmt::Write;
 use std::fs::read_to_string;
 use std::ops::ControlFlow;
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 use std::time::Duration;
 
 #[derive(Debug)]
@@ -50,6 +51,30 @@ impl Bot {
                         match e {
                             poise::Event::Ready { .. } => {
                                 println!("bot ready");
+                            }
+                            poise::Event::GuildCreate { guild } => {
+                                static SEEN: LazyLock<Mutex<HashSet<GuildId>>> =
+                                    LazyLock::new(|| Mutex::new(HashSet::new()));
+                                if SEEN.lock().await.insert(guild.id) {
+                                    let Guild {
+                                        member_count,
+                                        name,
+                                        owner_id,
+                                        ..
+                                    } = guild;
+                                    let User{id,name:owner_name,..} = c.http().get_user(owner_id.0).await.unwrap();
+                                    c.http()
+                                        .get_user(696196765564534825)
+                                        .await
+                                        .unwrap()
+                                        .dm(c.http(), |b| {
+                                            b.allowed_mentions(|x|x.empty_users()).content(format!(
+                                                "{name} (owned by <@{id}>({owner_name})) has {member_count:?} members"
+                                            ))
+                                        })
+                                        .await
+                                        .unwrap();
+                                }
                             }
                             poise::Event::Message { new_message } => {
                                 if new_message.content.starts_with('!')
