@@ -39,6 +39,45 @@ const SUCCESS: (u8, u8, u8) = (34, 139, 34);
 
 const PFX: char = '}';
 
+const THREADED: phf::Set<u64> = phf::phf_set! {
+    925721957209636914u64,
+    925721791475904533u64,
+    925721824556359720u64,
+    925721863525646356u64,
+    927036346869104693u64,
+    925736419983515688u64,
+    927793648417009676u64,
+    925721763856404520u64,
+    925721930814869524u64,
+    925674713932521483u64,
+    1141034314163826879u64,
+    949529149800865862u64,
+    925729855574794311u64,
+    1185702384194818048u64,
+    925720008313683969u64,
+    1018541701431836803u64,
+    927480650859184171u64,
+    925719985987403776u64,
+    949740875817287771u64,
+    926163105694752811u64,
+    973234467357458463u64,
+    973236445567410186u64,
+    1147887958351945738u64,
+    1096157669112418454u64,
+    973234248054104115u64,
+    973422874734002216u64,
+    973369188800413787u64,
+    1147722735305367572u64,
+    974450769967341568u64,
+    973241041685737532u64,
+    1158818171139133490u64,
+    1158818324210274365u64,
+    1158818598568075365u64,
+    1142181013779398676u64,
+
+    1129391545418797147u64,
+};
+
 pub struct Bot;
 impl Bot {
     pub async fn spawn() {
@@ -91,7 +130,10 @@ impl Bot {
                                     content: new_message.content.clone(),
                                     channel: new_message.channel_id,
                                 };
-                                if let ControlFlow::Break(m) = schematic::with(m, c).await? {
+                                if let ControlFlow::Break((m,n)) = schematic::with(m, c).await? {
+                                    if THREADED.contains(&m.channel_id.get()) {
+                                        m.channel_id.create_thread_from_message(c, m.id,CreateThread::new(n).audit_log_reason("because yes").auto_archive_duration(AutoArchiveDuration::OneDay)).await.unwrap();
+                                    }
                                     d.tracker.insert(new_message.id, m);
                                     return Ok(());
                                 }
@@ -110,7 +152,7 @@ impl Bot {
 
                                 if let Some((_, r)) = d.tracker.remove(id) {
                                     r.delete(c).await.unwrap();
-                                    if let ControlFlow::Break(m) = schematic::with(
+                                    if let ControlFlow::Break((m,_)) = schematic::with(
                                         Msg {
                                             author: author
                                                 .nick_in(c, guild_id)

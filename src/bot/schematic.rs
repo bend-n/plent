@@ -37,7 +37,10 @@ async fn from_attachments(attchments: &[Attachment]) -> Result<Option<Schematic>
     Ok(None)
 }
 
-pub async fn with(m: Msg, c: &serenity::client::Context) -> Result<ControlFlow<Message, ()>> {
+pub async fn with(
+    m: Msg,
+    c: &serenity::client::Context,
+) -> Result<ControlFlow<(Message, String), ()>> {
     let author = m.author;
     let send = |v: Schematic| async move {
         let d = v
@@ -49,7 +52,7 @@ pub async fn with(m: Msg, c: &serenity::client::Context) -> Result<ControlFlow<M
         println!("deser {name}");
         let p = tokio::task::spawn_blocking(move || to_png(&v)).await?;
         println!("rend {name}");
-        anyhow::Ok(
+        anyhow::Ok((
             m.channel
                 .send_message(
                     c,
@@ -68,13 +71,14 @@ pub async fn with(m: Msg, c: &serenity::client::Context) -> Result<ControlFlow<M
                                 write!(s, "{} {n} ", emoji::mindustry::item(i)).unwrap();
                             }
                             e.field("req", s, true)
-                                .title(name)
+                                .title(name.clone())
                                 .footer(CreateEmbedFooter::new(format!("requested by {author}")))
                                 .color(SUCCESS)
                         }),
                 )
                 .await?,
-        )
+            name,
+        ))
     };
 
     if let Ok(Some(v)) = from_attachments(&m.attachments).await {
