@@ -12,15 +12,13 @@ tokio = { version = "1.28.2", features = [
   "parking_lot",
 ], default-features = false }
 clipline = "0.1.2"
-serenity = { version = "0.11.5", features = [
+serenity = { version = "0.12", features = [
   "builder",
   "client",
   "rustls_backend",
   "gateway",
 ], default-features = false }
-poise = { version = "0.5.5", default-features = false, features = [
-  "handle_panics",
-] }
+poise = { git = "https://github.com/serenity-rs/poise" }
 anyhow = "1.0.75"
 regex = { version = "1.8.4", features = ["std"], default-features = false }
 btparse = "0.1.1"
@@ -46,3 +44,6 @@ debug-assertions = false
 [profile.dev.package.fimg]
 opt-level = 3
 debug-assertions = false
+
+[patch.crates-io]
+serenity = { git = "https://github.com/bend-n/serenity", branch = "opt" }

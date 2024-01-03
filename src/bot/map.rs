@@ -1,7 +1,6 @@
 use anyhow::Result;
 use mindus::{data::map::ReadError, *};
 use poise::serenity_prelude::*;
-use std::borrow::Cow;
 use std::time::Instant;
 
 use super::{strip_colors, SUCCESS};
@@ -48,7 +47,7 @@ pub async fn with(msg: &Message, c: &serenity::client::Context) -> Result<()> {
                     )
                 }
             };
-            let t = msg.channel_id.start_typing(&c.http)?;
+            let t = msg.channel_id.start_typing(&c.http);
             let deser_took = then.elapsed();
             let name = strip_colors(m.tags.get("name").or(m.tags.get("name")).unwrap());
             let (render_took, compression_took, total, png) =
@@ -64,7 +63,7 @@ pub async fn with(msg: &Message, c: &serenity::client::Context) -> Result<()> {
                 })
                 .await?;
             t.stop();
-            msg.channel_id.send_message(c, |m| { m.add_file(AttachmentType::Bytes { data: Cow::from(png), filename: "map.png".to_string() }).embed(|e| e.title(&name).footer(|f| f.text(format!("render of {name} (requested by {auth}) took: {:.3}s (deser: {}ms, render: {:.3}s, compression: {:.3}s)", total.as_secs_f32(), deser_took.as_millis(), render_took.as_secs_f32(), compression_took.as_secs_f32()))).attachment("map.png").color(SUCCESS)) }).await?;
+            msg.channel_id.send_message(c,CreateMessage::new().add_file(CreateAttachment::bytes(png,"map.png")).embed(CreateEmbed::new().title(&name).footer(CreateEmbedFooter::new(format!("render of {name} (requested by {auth}) took: {:.3}s (deser: {}ms, render: {:.3}s, compression: {:.3}s)", total.as_secs_f32(), deser_took.as_millis(), render_took.as_secs_f32(), compression_took.as_secs_f32()))).attachment("map.png").color(SUCCESS))).await?;
             return Ok(());
         }
     }

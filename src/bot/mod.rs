@@ -13,6 +13,7 @@ use std::fs::read_to_string;
 use std::ops::ControlFlow;
 use std::sync::{Arc, LazyLock};
 use std::time::Duration;
+use tokio::sync::Mutex;
 
 #[derive(Debug)]
 pub struct Data {
@@ -43,16 +44,16 @@ impl Bot {
     pub async fn spawn() {
         println!("bot startup");
         let tok = std::env::var("TOKEN").unwrap_or(read_to_string("token").expect("wher token"));
-        let f: poise::FrameworkBuilder<Data, anyhow::Error> = poise::Framework::builder()
+        let f: poise::Framework<Data, anyhow::Error> = poise::Framework::builder()
             .options(poise::FrameworkOptions {
                 commands: vec![logic::run(), help()],
                 event_handler: |c, e, _, d| {
                     Box::pin(async move {
                         match e {
-                            poise::Event::Ready { .. } => {
+                            FullEvent::Ready { .. } => {
                                 println!("bot ready");
                             }
-                            poise::Event::GuildCreate { guild } => {
+                            FullEvent::GuildCreate { guild ,..} => {
                                 static SEEN: LazyLock<Mutex<HashSet<GuildId>>> =
                                     LazyLock::new(|| Mutex::new(HashSet::new()));
                                 if SEEN.lock().await.insert(guild.id) {
@@ -62,21 +63,19 @@ impl Bot {
                                         owner_id,
                                         ..
                                     } = guild;
-                                    let User{id,name:owner_name,..} = c.http().get_user(owner_id.0).await.unwrap();
+                                    let User{id,name:owner_name,..} = c.http().get_user(*owner_id).await.unwrap();
                                     c.http()
-                                        .get_user(696196765564534825)
+                                        .get_user(696196765564534825.into())
                                         .await
                                         .unwrap()
-                                        .dm(c.http(), |b| {
-                                            b.allowed_mentions(|x|x.empty_users()).content(format!(
-                                                "{name} (owned by <@{id}>({owner_name})) has {member_count:?} members"
-                                            ))
-                                        })
+                                        .dm(c.http(),  CreateMessage::new().allowed_mentions(CreateAllowedMentions::default().empty_users()).content(format!(
+                                            "{name} (owned by <@{id}>({owner_name})) has {member_count:?} members"
+                                        )))
                                         .await
                                         .unwrap();
                                 }
                             }
-                            poise::Event::Message { new_message } => {
+                            FullEvent::Message { new_message } => {
                                 if new_message.content.starts_with('!')
                                     || new_message.content.starts_with(PFX)
                                     || new_message.author.bot
@@ -99,18 +98,17 @@ impl Bot {
                                 // not tracked, as you cant add a attachment afterwwards.
                                 map::with(new_message, c).await?;
                             }
-                            poise::Event::MessageUpdate { event, .. } => {
-                                let MessageUpdateEvent {
-                                    author: Some(author),
-                                    guild_id: Some(guild_id),
-                                    content: Some(content),
-                                    attachments: Some(attachments),
-                                    ..
-                                } = event.clone()
-                                else {
-                                    return Ok(());
-                                };
-                                if let Some((_, r)) = d.tracker.remove(&event.id) {
+                            FullEvent::MessageUpdate {event: MessageUpdateEvent {
+                                author: Some(author),
+                                guild_id: Some(guild_id),
+                                content: Some(content),
+                                attachments: Some(attachments),
+                                id,
+                                channel_id,
+                                ..
+                            }, ..} => {
+
+                                if let Some((_, r)) = d.tracker.remove(id) {
                                     r.delete(c).await.unwrap();
                                     if let ControlFlow::Break(m) = schematic::with(
                                         Msg {
@@ -118,19 +116,19 @@ impl Bot {
                                                 .nick_in(c, guild_id)
                                                 .await
                                                 .unwrap_or(author.name.clone()),
-                                            content,
-                                            attachments,
-                                            channel: event.channel_id,
+                                            content:content.clone(),
+                                            attachments:attachments.clone(),
+                                            channel: *channel_id,
                                         },
                                         c,
                                     )
                                     .await?
                                     {
-                                        d.tracker.insert(event.id, m);
+                                        d.tracker.insert(*id, m);
                                     }
                                 }
                             }
-                            poise::Event::MessageDelete {
+                            FullEvent::MessageDelete {
                                 deleted_message_id, ..
                             } => {
                                 if let Some((_, r)) = d.tracker.remove(deleted_message_id) {
@@ -144,16 +142,14 @@ impl Bot {
                 },
                 on_error: |e| Box::pin(on_error(e)),
                 prefix_options: poise::PrefixFrameworkOptions {
-                    edit_tracker: Some(poise::EditTracker::for_timespan(
+                    edit_tracker: Some(Arc::new(poise::EditTracker::for_timespan(
                         std::time::Duration::from_secs(2 * 60),
-                    )),
+                    ))),
                     prefix: Some(PFX.to_string()),
                     ..Default::default()
                 },
                 ..Default::default()
             })
-            .token(tok)
-            .intents(GatewayIntents::non_privileged() | GatewayIntents::MESSAGE_CONTENT)
             .setup(|ctx, _ready, framework| {
                 Box::pin(async move {
                     poise::builtins::register_globally(ctx, &framework.options().commands).await?;
@@ -173,8 +169,17 @@ impl Bot {
                     });
                     Ok(Data { tracker })
                 })
-            });
-        f.run().await.unwrap();
+            }).build();
+        ClientBuilder::new(
+            tok,
+            GatewayIntents::non_privileged() | GatewayIntents::MESSAGE_CONTENT,
+        )
+        .framework(f)
+        .await
+        .unwrap()
+        .start()
+        .await
+        .unwrap();
     }
 }
 
@@ -183,7 +188,7 @@ type Context<'a> = poise::Context<'a, Data, anyhow::Error>;
 async fn on_error(error: poise::FrameworkError<'_, Data, anyhow::Error>) {
     use poise::FrameworkError::Command;
     match error {
-        Command { error, ctx } => {
+        Command { error, ctx, .. } => {
             let mut msg;
             {
                 let mut chain = error.chain();
@@ -202,7 +207,7 @@ async fn on_error(error: poise::FrameworkError<'_, Data, anyhow::Error>) {
                 let mut s = vec![];
                 for frame in parsed.frames {
                     if let Some(line) = frame.line
-                        && (frame.function.contains("panel")
+                        && (frame.function.contains("plent")
                             || frame.function.contains("poise")
                             || frame.function.contains("serenity")
                             || frame.function.contains("mindus")
@@ -243,18 +248,16 @@ pub async fn help(
     #[autocomplete = "poise::builtins::autocomplete_command"]
     command: Option<String>,
 ) -> Result<()> {
-    ctx.send(|m| {
-        m.ephemeral(true).content(
-            if matches!(
-                command.as_deref(),
-                Some("eval") | Some("exec") | Some("run")
-            ) {
-                include_str!("help_eval.md")
-            } else {
-                include_str!("usage.md")
-            },
-        )
-    })
+    ctx.send(poise::CreateReply::default().ephemeral(true).content(
+        if matches!(
+            command.as_deref(),
+            Some("eval") | Some("exec") | Some("run")
+        ) {
+            include_str!("help_eval.md")
+        } else {
+            include_str!("usage.md")
+        },
+    ))
     .await?;
     Ok(())
 }

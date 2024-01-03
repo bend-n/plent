@@ -4,8 +4,8 @@ use mindus::*;
 use poise::serenity_prelude::*;
 use regex::Regex;
 use std::fmt::Write;
+use std::ops::ControlFlow;
 use std::sync::LazyLock;
-use std::{borrow::Cow, ops::ControlFlow};
 
 use super::{strip_colors, Msg, SUCCESS};
 
@@ -51,27 +51,28 @@ pub async fn with(m: Msg, c: &serenity::client::Context) -> Result<ControlFlow<M
         println!("rend {name}");
         anyhow::Ok(
             m.channel
-                .send_message(c, |m| {
-                    m.add_file(AttachmentType::Bytes {
-                        data: Cow::Owned(p),
-                        filename: "image.png".to_string(),
-                    })
-                    .embed(|e| {
-                        e.attachment("image.png");
-                        d.map(|v| e.description(v));
-                        let mut s = String::new();
-                        for (i, n) in cost.iter() {
-                            if n == 0 {
-                                continue;
+                .send_message(
+                    c,
+                    CreateMessage::new()
+                        .add_file(CreateAttachment::bytes(p, "image.png"))
+                        .embed({
+                            let mut e = CreateEmbed::new().attachment("image.png");
+                            if let Some(v) = d {
+                                e = e.description(v);
                             }
-                            write!(s, "{} {n} ", emoji::mindustry::item(i)).unwrap();
-                        }
-                        e.field("req", s, true);
-                        e.title(name)
-                            .footer(|f| f.text(format!("requested by {author}")))
-                            .color(SUCCESS)
-                    })
-                })
+                            let mut s = String::new();
+                            for (i, n) in cost.iter() {
+                                if n == 0 {
+                                    continue;
+                                }
+                                write!(s, "{} {n} ", emoji::mindustry::item(i)).unwrap();
+                            }
+                            e.field("req", s, true)
+                                .title(name)
+                                .footer(CreateEmbedFooter::new(format!("requested by {author}")))
+                                .color(SUCCESS)
+                        }),
+                )
                 .await?,
         )
     };

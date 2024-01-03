@@ -1,7 +1,6 @@
 use super::{Context, Result};
 use lemu::Executor;
-use poise::{serenity_prelude::AttachmentType, CodeBlock, KeyValueArgs};
-use std::borrow::Cow;
+use poise::{serenity_prelude::*, CodeBlock, KeyValueArgs};
 
 #[poise::command(prefix_command, track_edits, rename = "eval")]
 pub async fn run(
@@ -33,10 +32,11 @@ pub async fn run(
     {
         Ok(o) => o,
         Err(e) => {
-            ctx.send(|c| {
-                c.allowed_mentions(|a| a.empty_parse())
-                    .content(format!("```ansi\n{e}\n```"))
-            })
+            ctx.send(
+                poise::CreateReply::default()
+                    .allowed_mentions(CreateAllowedMentions::default().empty_users().empty_roles())
+                    .content(format!("```ansi\n{e}\n```")),
+            )
             .await?;
             return Ok(());
         }
@@ -65,24 +65,23 @@ pub async fn run(
         None
     };
 
-    ctx.send(|c| {
+    ctx.send({
+        let mut c = poise::CreateReply::default();
         if output.is_empty() && display.is_none() {
-            c.content("no output");
+            c = c.content("no output");
         }
         if !output.is_empty() {
-            c.content(format!(
+            c = c.content(format!(
                 "```\n{}\n```",
                 String::from_utf8_lossy(&output).replace('`', "\u{200b}`")
             ));
         }
         if let Some(display) = display {
-            c.attachment(AttachmentType::Bytes {
-                data: Cow::from(display),
-                filename: "display1.png".to_string(),
-            })
-            .embed(|e| e.attachment("display1.png"));
+            c = c
+                .attachment(CreateAttachment::bytes(display, "display1.png"))
+                .embed(CreateEmbed::default().attachment("display1.png"));
         }
-        c.allowed_mentions(|a| a.empty_parse())
+        c
     })
     .await?;
 
