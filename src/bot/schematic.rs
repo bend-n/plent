@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use mindus::data::DataRead;
 use mindus::*;
 use poise::serenity_prelude::*;
@@ -12,7 +12,7 @@ use super::{strip_colors, Msg, SUCCESS};
 static RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"(```)?(\n)?([^`]+)(\n)?(```)?").unwrap());
 
-async fn from_attachments(attchments: &[Attachment]) -> Result<Option<Schematic>> {
+pub async fn from_attachments(attchments: &[Attachment]) -> Result<Option<Schematic>> {
     for a in attchments {
         if a.filename.ends_with("msch") {
             let s = a.download().await?;
@@ -40,7 +40,7 @@ async fn from_attachments(attchments: &[Attachment]) -> Result<Option<Schematic>
 pub async fn with(
     m: Msg,
     c: &serenity::client::Context,
-) -> Result<ControlFlow<(Message, String), ()>> {
+) -> Result<ControlFlow<(Message, String, Schematic), ()>> {
     let author = m.author;
     let send = |v: Schematic| async move {
         let d = v
@@ -50,7 +50,8 @@ pub async fn with(
         let name = emoji::mindustry::to_discord(&strip_colors(v.tags.get("name").unwrap()));
         let cost = v.compute_total_cost().0;
         println!("deser {name}");
-        let p = tokio::task::spawn_blocking(move || to_png(&v)).await?;
+        let vclone = v.clone();
+        let p = tokio::task::spawn_blocking(move || to_png(&vclone)).await?;
         println!("rend {name}");
         anyhow::Ok((
             m.channel
@@ -78,15 +79,14 @@ pub async fn with(
                 )
                 .await?,
             name,
+            v,
         ))
     };
 
-    if let Ok(Some(v)) = from_attachments(&m.attachments).await {
+    if let Ok(Some(v)) = from((&m.content, &m.attachments)).await {
         return Ok(ControlFlow::Break(send(v).await?));
     }
-    if let Ok(v) = from_msg(&m.content) {
-        return Ok(ControlFlow::Break(send(v).await?));
-    }
+
     Ok(ControlFlow::Continue(()))
 }
 
@@ -94,13 +94,21 @@ pub fn to_png(s: &Schematic) -> Vec<u8> {
     super::png(s.render())
 }
 
-fn from_msg(msg: &str) -> Result<Schematic> {
-    let schem_text = RE
-        .captures(msg)
-        .ok_or(anyhow!("couldnt find schematic"))?
-        .get(3)
-        .unwrap()
-        .as_str()
-        .trim();
-    Ok(Schematic::deserialize_base64(schem_text)?)
+pub async fn from(m: (&str, &[Attachment])) -> Result<Option<Schematic>> {
+    match from_msg(m.0) {
+        x @ Ok(_) => x,
+        Err(_) => from_attachments(m.1).await,
+    }
+}
+
+pub fn from_msg(msg: &str) -> Result<Option<Schematic>> {
+    let schem_text = match RE.captures(msg) {
+        None => return Ok(None),
+        Some(x) => x,
+    }
+    .get(3)
+    .unwrap()
+    .as_str()
+    .trim();
+    Ok(Some(Schematic::deserialize_base64(schem_text)?))
 }

@@ -1,4 +1,4 @@
-#![feature(lazy_cell, let_chains, iter_intersperse)]
+#![feature(lazy_cell, let_chains, iter_intersperse, if_let_guard)]
 #[macro_use]
 mod bot;
 
