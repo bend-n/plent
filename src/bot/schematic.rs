@@ -96,8 +96,8 @@ pub fn to_png(s: &Schematic) -> Vec<u8> {
 
 pub async fn from(m: (&str, &[Attachment])) -> Result<Option<Schematic>> {
     match from_msg(m.0) {
-        x @ Ok(_) => x,
-        Err(_) => from_attachments(m.1).await,
+        x @ Ok(Some(_)) => x,
+        _ => from_attachments(m.1).await,
     }
 }
 
