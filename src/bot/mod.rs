@@ -91,7 +91,6 @@ const SPECIAL: phf::Map<u64, &str> = phf::phf_map! {
     927793648417009676u64 => "scrap",
     925721763856404520u64 => "silicon",
     925721930814869524u64 => "surge-alloy",
-    925674713932521483u64 => "general",
     1141034314163826879u64 => "defensive-outpost",
     949529149800865862u64 => "drills",
     925729855574794311u64 => "logic-schems",
