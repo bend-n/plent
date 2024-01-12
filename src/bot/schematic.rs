@@ -43,12 +43,7 @@ pub async fn with(
 ) -> Result<ControlFlow<(Message, String, Schematic), ()>> {
     let author = m.author;
     let send = |v: Schematic| async move {
-        let d = v
-            .tags
-            .get("description")
-            .map(|t| emoji::mindustry::to_discord(&strip_colors(t)));
         let name = emoji::mindustry::to_discord(&strip_colors(v.tags.get("name").unwrap()));
-        let cost = v.compute_total_cost().0;
         println!("deser {name}");
         let vclone = v.clone();
         let p = tokio::task::spawn_blocking(move || to_png(&vclone)).await?;
@@ -61,11 +56,64 @@ pub async fn with(
                         .add_file(CreateAttachment::bytes(p, "image.png"))
                         .embed({
                             let mut e = CreateEmbed::new().attachment("image.png");
-                            if let Some(v) = d {
+                            if let Some(tags) = v.tags.get("labels") {
+                                // yes, this is incorrect. no, i dont care if your tag is `\u{208} useful tag`.
+                                static RE: LazyLock<Regex> =
+                                    LazyLock::new(|| Regex::new(r"\\u\{([a-f0-9]+)\}").unwrap());
+                                let mut yes = tags.clone();
+                                for c in RE.captures_iter(&tags) {
+                                    if let Ok(Some(y)) =
+                                        u32::from_str_radix(c.get(1).unwrap().as_str(), 16)
+                                            .map(char::from_u32)
+                                    {
+                                        yes = yes.replace(
+                                            c.get(0).unwrap().as_str(),
+                                            y.encode_utf8(&mut [0; 4]),
+                                        );
+                                    }
+                                }
+                                let mut s = yes[1..].as_bytes();
+                                let mut o = vec![];
+                                let mut t = Vec::new();
+
+                                while s.len() > 0 {
+                                    loop {
+                                        let b = s[0];
+                                        s = &s[1..];
+                                        match b {
+                                            b',' | b']' => {
+                                                o.push(emoji::mindustry::to_discord(
+                                                    std::str::from_utf8(&t)
+                                                        .unwrap()
+                                                        .trim()
+                                                        .trim_start_matches('"')
+                                                        .trim_end_matches('"'),
+                                                ));
+                                                break;
+                                            }
+                                            b => t.push(b),
+                                        }
+                                    }
+                                    t.clear();
+                                }
+                                e = e.field(
+                                    "tags",
+                                    o.iter()
+                                        .map(String::as_str)
+                                        .intersperse(" | ")
+                                        .fold(String::new(), |acc, x| acc + x),
+                                    true,
+                                );
+                            }
+                            if let Some(v) = v
+                                .tags
+                                .get("description")
+                                .map(|t| emoji::mindustry::to_discord(&strip_colors(t)))
+                            {
                                 e = e.description(v);
                             }
                             let mut s = String::new();
-                            for (i, n) in cost.iter() {
+                            for (i, n) in v.compute_total_cost().0.iter() {
                                 if n == 0 {
                                     continue;
                                 }
