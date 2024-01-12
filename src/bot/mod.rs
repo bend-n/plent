@@ -1,10 +1,10 @@
 mod logic;
 mod map;
 mod schematic;
+mod search;
 
 use anyhow::Result;
 use dashmap::DashMap;
-
 use mindus::Serializable;
 use poise::serenity_prelude::*;
 use serenity::futures::StreamExt;
@@ -159,7 +159,7 @@ impl Bot {
             std::env::var("TOKEN").unwrap_or_else(|_| read_to_string("token").expect("wher token"));
         let f: poise::Framework<Data, anyhow::Error> = poise::Framework::builder()
             .options(poise::FrameworkOptions {
-                commands: vec![logic::run(), help()],
+                commands: vec![logic::run(), help(), search::search(),search::find()],
                 event_handler: |c, e, _, d| {
                     Box::pin(async move {
                         match e {
@@ -312,9 +312,10 @@ impl Bot {
                 },
                 ..Default::default()
             })
-            .setup(|ctx, _ready, framework| {
+            .setup(|ctx, _ready, _| {
                 Box::pin(async move {
-                    poise::builtins::register_globally(ctx, &framework.options().commands).await?;
+                    poise::builtins::register_globally(ctx, &[logic::run(), help()]).await?;
+                    poise::builtins::register_in_guild(ctx, &[search::search(),search::find()], 925674713429184564.into()).await?;
                     println!("registered");
                     let tracker = Arc::new(DashMap::new());
                     let tc = Arc::clone(&tracker);
