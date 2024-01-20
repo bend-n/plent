@@ -4,7 +4,7 @@ use mindus::data::DataRead;
 use mindus::{Schematic, Serializable};
 use poise::serenity_prelude::*;
 use std::mem::MaybeUninit;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 struct Dq<T, const N: usize> {
     arr: [MaybeUninit<T>; N],
@@ -45,6 +45,29 @@ impl<T: Copy, const N: usize> Dq<T, N> {
             .take((self.len as usize).min(N))
             .map(|x| unsafe { x.assume_init() })
     }
+}
+
+#[poise::command(slash_command)]
+/// Find a schematic by file
+pub async fn file(
+    c: super::Context<'_>,
+    #[description = "schematic file name"] file: String,
+) -> Result<()> {
+    let Some((file, ch)) = files().find(|(x, _)| x.file_name().unwrap().to_string_lossy() == file)
+    else {
+        return c
+            .say(format!("{CANCEL} not found"))
+            .await
+            .map(|_| ())
+            .map_err(Into::into);
+    };
+    c.say(format!(
+        "{RIGHT} https://discord.com/channels/925674713429184564/{ch}/{}",
+        flake(&file.file_name().unwrap().to_string_lossy())
+    ))
+    .await
+    .map(|_| ())
+    .map_err(Into::into)
 }
 
 #[poise::command(slash_command)]
@@ -97,7 +120,7 @@ pub struct Data {
     message: u64,
 }
 
-pub fn schems() -> impl Iterator<Item = (Schematic, Data)> {
+pub fn files() -> impl Iterator<Item = (PathBuf, u64)> {
     super::SPECIAL
         .entries()
         .filter_map(|(&ch, &dir)| {
@@ -105,23 +128,28 @@ pub fn schems() -> impl Iterator<Item = (Schematic, Data)> {
                 .ok()
                 .map(|x| (x, ch))
         })
-        .map(|(fs, channel)| {
-            fs.filter_map(Result::ok).map(move |f| {
-                let dat = std::fs::read(f.path()).unwrap();
-                let mut dat = DataRead::new(&dat);
-                let ts = Schematic::deserialize(&mut dat).unwrap();
-                let p = f.path();
-                let x = p.file_name().unwrap().to_string_lossy();
-                (
-                    ts,
-                    Data {
-                        channel,
-                        message: (u64::from_str_radix(&x[..x.len() - 5], 16).unwrap()),
-                    },
-                )
-            })
-        })
+        .map(|(fs, channel)| fs.filter_map(Result::ok).map(move |f| (f.path(), channel)))
         .flatten()
+}
+
+pub fn schems() -> impl Iterator<Item = (Schematic, Data)> {
+    files().map(|(f, channel)| {
+        let dat = std::fs::read(&f).unwrap();
+        let mut dat = DataRead::new(&dat);
+        let ts = Schematic::deserialize(&mut dat).unwrap();
+        let x = f.file_name().unwrap().to_string_lossy();
+        (
+            ts,
+            Data {
+                channel,
+                message: flake(&x),
+            },
+        )
+    })
+}
+
+pub fn flake(x: &str) -> u64 {
+    u64::from_str_radix(&x[..x.len() - 5], 16).unwrap()
 }
 
 #[poise::command(slash_command)]

@@ -159,7 +159,7 @@ impl Bot {
             std::env::var("TOKEN").unwrap_or_else(|_| read_to_string("token").expect("wher token"));
         let f: poise::Framework<Data, anyhow::Error> = poise::Framework::builder()
             .options(poise::FrameworkOptions {
-                commands: vec![logic::run(), help(), search::search(),search::find()],
+                commands: vec![logic::run(), help(), search::search() ,search::find(), search::file()],
                 event_handler: |c, e, _, d| {
                     Box::pin(async move {
                         match e {
@@ -315,7 +315,7 @@ impl Bot {
             .setup(|ctx, _ready, _| {
                 Box::pin(async move {
                     poise::builtins::register_globally(ctx, &[logic::run(), help()]).await?;
-                    poise::builtins::register_in_guild(ctx, &[search::search(),search::find()], 925674713429184564.into()).await?;
+                    poise::builtins::register_in_guild(ctx, &[search::search(), search::find(), search::file()], 925674713429184564.into()).await?;
                     println!("registered");
                     let tracker = Arc::new(DashMap::new());
                     let tc = Arc::clone(&tracker);
