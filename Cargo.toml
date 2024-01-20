@@ -17,6 +17,7 @@ serenity = { version = "0.12", features = [
   "client",
   "rustls_backend",
   "gateway",
+  "model",
 ], default-features = false }
 poise = { git = "https://github.com/serenity-rs/poise" }
 anyhow = "1.0.75"

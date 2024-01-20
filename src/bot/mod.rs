@@ -5,6 +5,7 @@ mod search;
 
 use anyhow::Result;
 use dashmap::DashMap;
+use emoji::named::*;
 use mindus::Serializable;
 use poise::serenity_prelude::*;
 use serenity::futures::StreamExt;
@@ -14,7 +15,8 @@ use std::fmt::Write;
 use std::fs::read_to_string;
 use std::ops::ControlFlow;
 use std::path::Path;
-use std::sync::{Arc, LazyLock};
+use std::process::Stdio;
+use std::sync::{Arc, LazyLock, OnceLock};
 use std::time::Duration;
 use tokio::sync::Mutex;
 
@@ -151,13 +153,135 @@ pub async fn scour(c: Context<'_>) -> Result<()> {
     Ok(())
 }
 
+static HOOK: OnceLock<Webhook> = OnceLock::new();
+
+pub async fn hookup(c: &impl AsRef<Http>) {
+    let v = Webhook::from_url(c, {
+        &std::env::var("WEBHOOK")
+            .unwrap_or_else(|_| read_to_string("webhook").expect("wher webhook"))
+    })
+    .await
+    .unwrap();
+    HOOK.get_or_init(|| v);
+}
+
+async fn send<F>(c: &impl AsRef<Http>, block: F)
+where
+    for<'b> F: FnOnce(ExecuteWebhook) -> ExecuteWebhook,
+{
+    let execute_webhook = ExecuteWebhook::default();
+    let execute_webhook = block(execute_webhook);
+    if let Err(e) = HOOK
+        .get()
+        .unwrap()
+        .execute(c.as_ref(), false, execute_webhook.clone())
+        .await
+    {
+        println!("sending {execute_webhook:#?} got error {e}.");
+    }
+}
+
+mod git {
+    use super::*;
+    pub fn schem(dir: &str, x: MessageId) -> std::io::Result<mindus::Schematic> {
+        std::fs::read(path(dir, x))
+            .map(|x| mindus::Schematic::deserialize(&mut mindus::data::DataRead::new(&x)).unwrap())
+    }
+
+    pub fn path(dir: &str, x: MessageId) -> std::path::PathBuf {
+        Path::new("repo")
+            .join(dir)
+            .join(format!("{:x}.msch", x.get()))
+    }
+
+    pub fn gpath(dir: &str, x: MessageId) -> std::path::PathBuf {
+        Path::new(dir).join(format!("{:x}.msch", x.get()))
+    }
+
+    pub fn has(dir: &str, x: MessageId) -> bool {
+        path(dir, x).exists()
+    }
+
+    pub fn whos(dir: &str, x: MessageId) -> String {
+        let mut dat = std::process::Command::new("git")
+            .current_dir("repo")
+            .arg("blame")
+            .arg("--porcelain")
+            .arg(gpath(dir, x))
+            .stdout(Stdio::piped())
+            .spawn()
+            .unwrap()
+            .wait_with_output()
+            .unwrap()
+            .stdout;
+        dat.drain(0..=dat.iter().position(|&x| x == b'\n').unwrap() + "author ".len());
+        dat.truncate(dat.iter().position(|&x| x == b'\n').unwrap());
+        String::from_utf8(dat).unwrap()
+    }
+
+    pub fn remove(dir: &str, x: MessageId) {
+        assert!(std::process::Command::new("git")
+            .current_dir("repo")
+            .arg("rm")
+            .arg("-q")
+            .arg(gpath(dir, x))
+            .status()
+            .unwrap()
+            .success());
+    }
+
+    pub fn commit(by: &str, msg: &str) {
+        assert!(std::process::Command::new("git")
+            .current_dir("repo")
+            .args(["commit", "-q", "--author"])
+            .arg(format!("{by} <@designit>",))
+            .arg("-m")
+            .arg(msg)
+            .status()
+            .unwrap()
+            .success());
+    }
+
+    pub fn push() {
+        assert!(std::process::Command::new("git")
+            .current_dir("repo")
+            .arg("push")
+            .arg("-q")
+            .status()
+            .unwrap()
+            .success())
+    }
+
+    pub fn write(dir: &str, x: MessageId, s: &mindus::Schematic) {
+        _ = std::fs::create_dir(format!("repo/{dir}"));
+        let mut w = mindus::data::DataWrite::default();
+        s.serialize(&mut w).unwrap();
+        std::fs::write(path(dir, x), w.consume()).unwrap();
+        add();
+    }
+
+    pub fn add() {
+        assert!(std::process::Command::new("git")
+            .current_dir("repo")
+            .arg("add")
+            .arg(".")
+            .status()
+            .unwrap()
+            .success());
+    }
+}
+
+const RM: (u8, u8, u8) = (242, 121, 131);
+const AD: (u8, u8, u8) = (128, 191, 255);
+const CAT: &str =
+    "https://cdn.discordapp.com/avatars/696196765564534825/6f3c605329ffb5cfb790343f59ed355d.webp";
 pub struct Bot;
 impl Bot {
     pub async fn spawn() {
         println!("bot startup");
         let tok =
             std::env::var("TOKEN").unwrap_or_else(|_| read_to_string("token").expect("wher token"));
-        let f: poise::Framework<Data, anyhow::Error> = poise::Framework::builder()
+        let f = poise::Framework::builder()
             .options(poise::FrameworkOptions {
                 commands: vec![logic::run(), help(), search::search() ,search::find(), search::file()],
                 event_handler: |c, e, _, d| {
@@ -165,19 +289,27 @@ impl Bot {
                         match e {
                             FullEvent::Ready { .. } => {
                                 println!("bot ready");
-                                emojis::load(c.http())
-                                .await;
+                                emojis::load(c.http()).await;
+                                hookup(c.http()).await;
                             }
                             // :deny:, @vd
                             FullEvent::ReactionAdd { add_reaction: Reaction { message_id, emoji: ReactionType::Custom {  id,.. } ,channel_id,member: Some(Member{roles,nick,user,..}),..}} if *id == 1192388789952319499 && let Some(dir) = SPECIAL.get(&channel_id.get()) && roles.contains(&RoleId::new(925676016708489227)) => {
                                 let m = c.http().get_message(*channel_id,* message_id).await?;
-                                if Path::new("repo").join(dir).join(format!("{:x}.msch",message_id.get())).exists() {
-                                    assert!(std::process::Command::new("git").current_dir("repo").arg("rm").arg("-q").arg(Path::new(dir).join(format!("{:x}.msch",message_id.get()))).status().unwrap().success());
-                                    assert!(std::process::Command::new("git").current_dir("repo").args(["commit", "-q", "--author"]).arg(format!("{} <@designit>", nick.as_deref().unwrap_or(&user.name))).arg("-m").arg(format!("remove {:x}.msch", message_id.get())).status().unwrap().success());
-                                    assert!(std::process::Command::new("git").current_dir("repo").arg("push").arg("-q").status().unwrap().success());
+                                if let Ok(s) = git::schem(dir,*message_id) {
+                                    let who = nick.as_deref().unwrap_or(&user.name);
+                                    let own = git::whos(dir,*message_id);
+                                    git::remove(dir, *message_id);
+                                    git::commit(who, &format!("remove {:x}.msch", message_id.get()));
+                                    git::push();
                                     _ = m.delete_reaction(c,Some(1174262682573082644.into()), emojis::get!(MERGE)).await;
                                     _ = m.delete_reaction(c,Some(1174262682573082644.into()), ReactionType::Custom { animated: false, id: 1192316518395039864.into(), name: Some("merge".into()) }).await.unwrap();
                                     m.react(c,emojis::get!(DENY)).await?;
+                                    send(c,|x| x
+                                        .avatar_url(user.avatar_url().unwrap_or(CAT.to_string()))
+                                        .username(who)
+                                        .embed(CreateEmbed::new().color(RM)
+                                            .description(format!("https://discord.com/channels/925674713429184564/{channel_id}/{message_id} {} {} (added by {own}) (`{:x}`)", emojis::get!(DENY), emoji::mindustry::to_discord(&strip_colors(s.tags.get("name").unwrap())), message_id.get())))
+                                    ).await;
                                 };
                             }
                             FullEvent::GuildCreate { guild ,..} => {
@@ -225,14 +357,17 @@ impl Bot {
                                     }
                                     if let Some(dir) = SPECIAL.get(&m.channel_id.get()) {
                                         // add :)
-                                        let mut w = mindus::data::DataWrite::default();
-                                        s.serialize(&mut w).unwrap();
-                                        _ = std::fs::create_dir(format!("repo/{dir}"));
-                                        std::fs::write(format!("repo/{dir}/{:x}.msch", new_message.id.get()), w.consume()).unwrap();
-                                        assert!(std::process::Command::new("git").current_dir("repo").arg("add").arg(".").status().unwrap().success());
-                                        assert!(std::process::Command::new("git").current_dir("repo").args(["commit", "-q", "--author"]).arg(format!("{who} <@designit>")).arg("-m").arg(format!("add {:x}.msch", new_message.id.get())).status().unwrap().success());
-                                        assert!(std::process::Command::new("git").current_dir("repo").arg("push").arg("-q").status().unwrap().success());
+                                        git::write(dir, new_message.id, &s);
+                                        git::add();
+                                        git::commit(&who, &format!("add {:x}.msch", new_message.id.get()));
+                                        git::push();
                                         new_message.react(c, emojis::get!(MERGE)).await?;
+                                        send(c,|x| x
+                                            .avatar_url(new_message.author.avatar_url().unwrap_or(CAT.to_string()))
+                                            .username(who)
+                                            .embed(CreateEmbed::new().color(AD)
+                                                .description(format!("https://discord.com/channels/925674713429184564/{}/{} {ADD} add {} (`{:x}.msch`)", m.channel_id,m.id, emoji::mindustry::to_discord(&strip_colors(s.tags.get("name").unwrap())), new_message.id.get())))
+                                        ).await;
                                     }
                                     d.tracker.insert(new_message.id, m);
                                     return Ok(());
@@ -268,16 +403,17 @@ impl Bot {
                                     .await?
                                     {
                                         d.tracker.insert(*id, m);
-                                        if let Some(dir) = SPECIAL.get(&channel_id.get()) {
-                                            if Path::new("repo").join(dir).join(format!("{:x}.msch",id.get())).exists() {   
-                                                // update :)
-                                                let mut w = mindus::data::DataWrite::default();
-                                                s.serialize(&mut w).unwrap();
-                                                std::fs::write(format!("repo/{dir}/{:x}.msch", id.get()), w.consume()).unwrap();
-                                                assert!(std::process::Command::new("git").current_dir("repo").arg("add").arg(".").status().unwrap().success());
-                                                assert!(std::process::Command::new("git").current_dir("repo").args(["commit", "-q", "--author"]).arg(format!("{who} <@designit>")).arg("-m").arg(format!("update {:x}.msch", id.get())).status().unwrap().success());
-                                                assert!(std::process::Command::new("git").current_dir("repo").arg("push").arg("-q").status().unwrap().success());
-                                            }
+                                        if let Some(dir) = SPECIAL.get(&channel_id.get()) && git::has(dir, *id) {
+                                            // update :)
+                                            git::write(dir, *id, &s);
+                                            git::commit(&who,&format!("update {:x}.msch", id.get()));
+                                            git::push();
+                                            send(c,|x| x
+                                                .avatar_url(author.avatar_url().unwrap_or(CAT.to_string()))
+                                                .username(who)
+                                                .embed(CreateEmbed::new().color(AD)
+                                                    .description(format!("https://discord.com/channels/925674713429184564/{channel_id}/{id} {ROTATE} update {} (`{:x}.msch`)", emoji::mindustry::to_discord(&strip_colors(s.tags.get("name").unwrap())), id.get())))
+                                            ).await;
                                         }
                                     }
                                 }
@@ -286,10 +422,18 @@ impl Bot {
                                 deleted_message_id, channel_id, ..
                             } => {
                                 if let Some(dir) = SPECIAL.get(&channel_id.get()) {
-                                    if Path::new("repo").join(dir).join(format!("{:x}.msch",deleted_message_id.get())).exists() {
-                                        assert!(std::process::Command::new("git").current_dir("repo").arg("rm").arg("-q").arg(Path::new(dir).join(format!("{:x}.msch", deleted_message_id.get()))).status().unwrap().success());
-                                        assert!(std::process::Command::new("git").current_dir("repo").args(["commit", "-q"]).arg("-m").arg(format!("remove {:x}.msch", deleted_message_id.get())).status().unwrap().success());
-                                        assert!(std::process::Command::new("git").current_dir("repo").arg("push").arg("-q").status().unwrap().success());
+                                    if let Ok(s) = git::schem(dir, *deleted_message_id) {
+                                        let own = git::whos(dir,*deleted_message_id);
+                                        git::remove(dir, *deleted_message_id);
+                                        git::commit("plent", &format!("remove {:x}", deleted_message_id.get()));
+                                        git::push();
+                                        send(c,|x| x
+                                            .username("plent")
+                                            .embed(CreateEmbed::new().color(RM)
+                                                .description(format!("{CANCEL} remove {} (added by {own}) (`{:x}.msch`)", emoji::mindustry::to_discord(&strip_colors(s.tags.get("name").unwrap())), deleted_message_id.get()))
+                                                .footer(CreateEmbedFooter::new("message was deleted.")
+                                            ))
+                                        ).await;
                                     };
                                 }
 
