@@ -27,6 +27,7 @@ pub struct Data {
 }
 
 pub struct Msg {
+    avatar: String,
     author: String,
     content: String,
     channel: ChannelId,
@@ -347,6 +348,7 @@ impl Bot {
                                 .unwrap_or(new_message.author.name.clone());
                                 let m = Msg {
                                     author: who.clone(),
+                                    avatar: new_message. author.avatar_url().unwrap_or(CAT.to_string()),
                                     attachments: new_message.attachments.clone(),
                                     content: new_message.content.clone(),
                                     channel: new_message.channel_id,
@@ -393,6 +395,7 @@ impl Bot {
                                     .unwrap_or(author.name.clone());
                                     if let ControlFlow::Break((m,_,s)) = schematic::with(
                                         Msg {
+                                            avatar: author.avatar_url().unwrap_or(CAT.to_string()),
                                             author: who.clone(),
                                             content:content.clone(),
                                             attachments:attachments.clone(),

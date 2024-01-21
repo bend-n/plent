@@ -121,7 +121,10 @@ pub async fn with(
                             }
                             e.field("req", s, true)
                                 .title(name.clone())
-                                .footer(CreateEmbedFooter::new(format!("requested by {author}")))
+                                .footer(
+                                    CreateEmbedFooter::new(format!("requested by {author}"))
+                                        .icon_url(m.avatar),
+                                )
                                 .color(SUCCESS)
                         }),
                 )
