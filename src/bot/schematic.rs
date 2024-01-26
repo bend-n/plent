@@ -55,7 +55,9 @@ pub async fn with(
                     CreateMessage::new()
                         .add_file(CreateAttachment::bytes(p, "image.png"))
                         .embed({
-                            let mut e = CreateEmbed::new().attachment("image.png");
+                            let mut e = CreateEmbed::new()
+                                .attachment("image.png")
+                                .author(CreateEmbedAuthor::new(author).icon_url(m.avatar));
                             if let Some(tags) = v.tags.get("labels") {
                                 // yes, this is incorrect. no, i dont care if your tag is `\u{208} useful tag`.
                                 static RE: LazyLock<Regex> =
@@ -119,13 +121,7 @@ pub async fn with(
                                 }
                                 write!(s, "{} {n} ", emoji::mindustry::item(i)).unwrap();
                             }
-                            e.field("req", s, true)
-                                .title(name.clone())
-                                .footer(
-                                    CreateEmbedFooter::new(format!("requested by {author}"))
-                                        .icon_url(m.avatar),
-                                )
-                                .color(SUCCESS)
+                            e.field("req", s, true).title(name.clone()).color(SUCCESS)
                         }),
                 )
                 .await?,
