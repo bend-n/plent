@@ -98,7 +98,7 @@ decl! {
     1198527267933007893u64 => "erekir-defensive-outpost" : [""],
     973236445567410186u64 => "fissile-matter" : [FISSILE_MATTER, ""],
     1147887958351945738u64 => "liquid" : [LIQUID],
-    1096157669112418454u64 => "mass-driver" : [MASS_DRIVER],
+    1096157669112418454u64 => "mass-driver" : [""],
     973234248054104115u64 => "oxide" : [OXIDE, ""],
     973422874734002216u64 => "erekir-phase" : [PHASE_FABRIC, ""],
     973369188800413787u64 => "power" : ["[#ff9266][]"],
