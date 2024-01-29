@@ -277,6 +277,7 @@ const CAT: &str =
 pub struct Bot;
 impl Bot {
     pub async fn spawn() {
+        use emoji::named::*;
         println!("bot startup");
         let tok =
             std::env::var("TOKEN").unwrap_or_else(|_| read_to_string("token").expect("wher token"));
