@@ -32,9 +32,10 @@ dashmap = "5.5.3"
 oxipng = { version = "9.0.0", default-features = false }
 fimg = "0.4.26"
 phf = { version = "0.11.2", features = ["macros"] }
-emoji = { git = "https://github.com/Apricot-Conservation-Project/emoji", version = "0.1.0" }
+emoji = { git = "https://github.com/Apricot-Conservation-Project/emoji" }
 rust-fuzzy-search = "0.1.1"
 jemallocator-global = "0.3.2"
+const_format = { version = "0.2.32", features = ["fmt"] }
 
 [profile.release]
 strip = true

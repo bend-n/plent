@@ -5,7 +5,6 @@ mod search;
 
 use anyhow::Result;
 use dashmap::DashMap;
-use emoji::named::*;
 use mindus::Serializable;
 use poise::serenity_prelude::*;
 use serenity::futures::StreamExt;
@@ -45,101 +44,89 @@ const SUCCESS: (u8, u8, u8) = (34, 139, 34);
 
 const PFX: char = '}';
 
-const THREADED: phf::Set<u64> = phf::phf_set! {
-    925721957209636914u64,
-    925721791475904533u64,
-    925721824556359720u64,
-    925721863525646356u64,
-    927036346869104693u64,
-    925736419983515688u64,
-    927793648417009676u64,
-    925721763856404520u64,
-    925721930814869524u64,
-    925674713932521483u64,
-    1200301847387316317u64,
-    925736573037838397u64,
-    1141034314163826879u64,
-    949529149800865862u64,
-    925729855574794311u64,
-    1185702384194818048u64,
-    1198555991667646464u64,
-    1198556531281637506u64,
-    1198527267933007893u64,
-    1018541701431836803u64,
-    927480650859184171u64,
-    925719985987403776u64,
-    949740875817287771u64,
-    926163105694752811u64,
-    973234467357458463u64,
-    973236445567410186u64,
-    1147887958351945738u64,
-    1096157669112418454u64,
-    973234248054104115u64,
-    973422874734002216u64,
-    973369188800413787u64,
-    1147722735305367572u64,
-    974450769967341568u64,
-    973241041685737532u64,
-    1158818171139133490u64,
-    1158818324210274365u64,
-    1158818598568075365u64,
-    1142181013779398676u64,
-    1200305956689547324u64,
-    1200306409036857384u64,
-    1200308292744921088u64,
-    1200308146460180520u64,
+macro_rules! decl {
+    ($($ch:literal $( => $item:literal : [$($labels: expr),* $(,)?])?),+ $(,)?) => {
+        use emoji::to_mindustry::named::*;
+        const THREADED: phf::Set<u64> = phf::phf_set! { $($ch,)+ };
+        const SPECIAL: phf::Map<u64, Ch> = phf::phf_map! {
+            $($($ch => Ch { d: $item, labels: &[$($labels,)+] })?),+
+        };
+    };
+}
+
+fn tags(t: &[&str]) -> String {
+    if let [x, rest @ ..] = t {
+        let mut s = format!("[\"{x}\"");
+        for elem in rest {
+            write!(s, ",\"{elem}\"").unwrap();
+        }
+        write!(s, "]").unwrap();
+        s
+    } else {
+        String::from("[]")
+    }
+}
+
+decl! {
+    925721957209636914u64 => "cryofluid" : [CRYOFLUID, CRYOFLUID_MIXER],
+    925721791475904533u64 => "graphite" : [GRAPHITE, GRAPHITE_PRESS],
+    925721824556359720u64 => "metaglass" : [METAGLASS, KILN],
+    925721863525646356u64 => "phase-fabric" : [PHASE_FABRIC, PHASE_WEAVER],
+    927036346869104693u64 => "plastanium" : [PLASTANIUM, PLASTANIUM_COMPRESSOR],
+    925736419983515688u64 => "pyratite" : [PYRATITE, PYRATITE_MIXER],
+    925736573037838397u64 => "blast-compound" : [BLAST_COMPOUND, BLAST_MIXER],
+    927793648417009676u64 => "scrap" : [SCRAP],
+    1198556531281637506u64 => "spore-press" : [OIL, SPORE_PRESS],
+    1200308146460180520u64 => "oil-extractor" : [OIL, OIL_EXTRACTOR],
+    1200301847387316317u64 => "rtg-gen" : [POWER, RTG_GENERATOR],
+    1200308292744921088u64 => "cultivator" : [SPORE_POD, CULTIVATOR],
+    1200305956689547324u64 => "graphite-multipress" : [GRAPHITE, MULTI_PRESS],
+    1200306409036857384u64 => "silicon-crucible" : [SILICON, SILICON_CRUCIBLE],
+    1198555991667646464u64 => "coal" : [COAL, COAL_CENTRIFUGE],
+    925721763856404520u64 => "silicon" : [SILICON, SILICON_SMELTER],
+    925721930814869524u64 => "surge-alloy" : [SURGE_ALLOY, SURGE_SMELTER],
+    1141034314163826879u64 => "defensive-outpost" : [""],
+    949529149800865862u64 => "drills" : [PRODUCTION],
+    925729855574794311u64 => "logic-schems" : [MICRO_PROCESSOR],
+    1185702384194818048u64 => "miscellaneous" : ["…"],
+    1018541701431836803u64 => "combustion-gen" : [POWER, COMBUSTION_GENERATOR],
+    927480650859184171u64 => "differential-gen" : [POWER, DIFFERENTIAL_GENERATOR],
+    925719985987403776u64 => "impact-reactor" : [POWER, IMPACT_REACTOR],
+    949740875817287771u64 => "steam-gen" : [POWER, STEAM_GENERATOR],
+    926163105694752811u64 => "thorium-reactor" : [POWER, THORIUM_REACTOR],
+    973234467357458463u64 => "carbide" : [CARBIDE, ""],
+    1198527267933007893u64 => "erekir-defensive-outpost" : [""],
+    973236445567410186u64 => "fissile-matter" : [FISSILE_MATTER, ""],
+    1147887958351945738u64 => "liquid" : [LIQUID],
+    1096157669112418454u64 => "mass-driver" : [MASS_DRIVER],
+    973234248054104115u64 => "oxide" : [OXIDE, ""],
+    973422874734002216u64 => "erekir-phase" : [PHASE_FABRIC, ""],
+    973369188800413787u64 => "power" : ["[#ff9266][]"],
+    1147722735305367572u64 => "silicon-arc" : [SILICON, ""],
+    974450769967341568u64 => "erekir-surge" : [SURGE_ALLOY, ""],
+    973241041685737532u64 => "erekir-units" : ["[#ff9266][]"],
+    1158818171139133490u64 => "unit-core" : [UNITS, CORE_NUCLEUS],
+    1158818324210274365u64 => "unit-delivery" : [UNITS, FLARE],
+    1158818598568075365u64 => "unit-raw" : [UNITS, PRODUCTION],
+    1142181013779398676u64 => "unit-sand" : [UNITS, SAND],
 
     1129391545418797147u64,
-};
+}
 
-const SPECIAL: phf::Map<u64, &str> = phf::phf_map! {
-    925721957209636914u64 => "cryofluid",
-    925721791475904533u64 => "graphite",
-    925721824556359720u64 => "metaglass",
-    925721863525646356u64 => "phase-fabric",
-    927036346869104693u64 => "plastanium",
-    925736419983515688u64 => "pyratite",
-    925736573037838397u64 => "blast-compound",
-    927793648417009676u64 => "scrap",
-    1198556531281637506u64 => "spore-press",
-    1200308146460180520u64 => "oil-extractor",
-    1200301847387316317u64 => "rtg-gen",
-    1200308292744921088u64 => "cultivator",
-    1200305956689547324u64 => "graphite-multipress",
-    1200306409036857384u64 => "silicon-crucible",
-    1198555991667646464u64 => "coal",
-    925721763856404520u64 => "silicon",
-    925721930814869524u64 => "surge-alloy",
-    1141034314163826879u64 => "defensive-outpost",
-    949529149800865862u64 => "drills",
-    925729855574794311u64 => "logic-schems",
-    1185702384194818048u64 => "miscellaneous",
-    1018541701431836803u64 => "combustion-gen",
-    927480650859184171u64 => "differential-gen",
-    925719985987403776u64 => "impact-reactor",
-    949740875817287771u64 => "steam-gen",
-    926163105694752811u64 => "thorium-reactor",
-    973234467357458463u64 => "carbide",
-    1198527267933007893u64 => "erekir-defensive-outpost",
-    973236445567410186u64 => "fissile-matter",
-    1147887958351945738u64 => "liquid",
-    1096157669112418454u64 => "mass-driver",
-    973234248054104115u64 => "oxide",
-    973422874734002216u64 => "erekir-phase",
-    973369188800413787u64 => "power",
-    1147722735305367572u64 => "silicon-arc",
-    974450769967341568u64 => "erekir-surge",
-    973241041685737532u64 => "erekir-units",
-    1158818171139133490u64 => "unit-core",
-    1158818324210274365u64 => "unit-delivery",
-    1158818598568075365u64 => "unit-raw",
-    1142181013779398676u64 => "unit-sand",
-};
+#[derive(Copy, Clone, Debug)]
+struct Ch {
+    d: &'static str,
+    labels: &'static [&'static str],
+}
+
+fn sep(x: Option<&Ch>) -> (Option<&'static str>, Option<String>) {
+    (x.map(|x| x.d), x.map(|x| tags(x.labels)))
+}
 
 #[poise::command(slash_command)]
 pub async fn scour(c: Context<'_>, ch: ChannelId) -> Result<()> {
     let mut n = 0;
-    let d = SPECIAL[&ch.get()];
+    let d = SPECIAL[&ch.get()].d;
     let h = c.say(format!("scouring {d}...")).await?;
     _ = std::fs::create_dir(format!("repo/{d}"));
     let mut msgs = ch.messages_iter(c).boxed();
@@ -305,7 +292,7 @@ impl Bot {
                                 hookup(c.http()).await;
                             }
                             // :deny:, @vd
-                            FullEvent::ReactionAdd { add_reaction: Reaction { message_id, emoji: ReactionType::Custom {  id,.. } ,channel_id,member: Some(Member{roles,nick,user,..}),..}} if *id == 1192388789952319499 && let Some(dir) = SPECIAL.get(&channel_id.get()) && roles.contains(&RoleId::new(925676016708489227)) => {
+                            FullEvent::ReactionAdd { add_reaction: Reaction { message_id, emoji: ReactionType::Custom {  id,.. } ,channel_id,member: Some(Member{roles,nick,user,..}),..}} if *id == 1192388789952319499 && let Some(Ch {d:dir,..}) = SPECIAL.get(&channel_id.get()) && roles.contains(&RoleId::new(925676016708489227)) => {
                                 let m = c.http().get_message(*channel_id,* message_id).await?;
                                 if let Ok(s) = git::schem(dir,*message_id) {
                                     let who = nick.as_deref().unwrap_or(&user.name);
@@ -364,11 +351,12 @@ impl Bot {
                                     content: new_message.content.clone(),
                                     channel: new_message.channel_id,
                                 };
-                                if let ControlFlow::Break((m,n, s)) = schematic::with(m, c).await? {
+                                let (dir, l) = sep(SPECIAL.get(&new_message.channel_id.get()));
+                                if let ControlFlow::Break((m,n, s)) = schematic::with(m, c, l).await? {
                                     if THREADED.contains(&m.channel_id.get()) {
                                         m.channel_id.create_thread_from_message(c, m.id,CreateThread::new(n).audit_log_reason("because yes").auto_archive_duration(AutoArchiveDuration::OneDay)).await.unwrap();
                                     }
-                                    if let Some(dir) = SPECIAL.get(&m.channel_id.get()) {
+                                    if let Some(dir) = dir {
                                         // add :)
                                         git::write(dir, new_message.id, &s);
                                         git::add();
@@ -404,6 +392,7 @@ impl Bot {
                                     .nick_in(c, guild_id)
                                     .await
                                     .unwrap_or(author.name.clone());
+                                    let (dir, l) = sep(SPECIAL.get(&r.channel_id.get()));
                                     if let ControlFlow::Break((m,_,s)) = schematic::with(
                                         Msg {
                                             avatar: author.avatar_url().unwrap_or(CAT.to_string()),
@@ -413,11 +402,12 @@ impl Bot {
                                             channel: *channel_id,
                                         },
                                         c,
+                                        l
                                     )
                                     .await?
                                     {
                                         d.tracker.insert(*id, m);
-                                        if let Some(dir) = SPECIAL.get(&channel_id.get()) && git::has(dir, *id) {
+                                        if let Some(dir) = dir && git::has(dir, *id) {
                                             // update :)
                                             git::write(dir, *id, &s);
                                             git::commit(&who,&format!("update {:x}.msch", id.get()));
@@ -435,7 +425,7 @@ impl Bot {
                             FullEvent::MessageDelete {
                                 deleted_message_id, channel_id, ..
                             } => {
-                                if let Some(dir) = SPECIAL.get(&channel_id.get()) {
+                                if let Some(Ch{ d:dir,..}) = SPECIAL.get(&channel_id.get()) {
                                     if let Ok(s) = git::schem(dir, *deleted_message_id) {
                                         let own = git::whos(dir,*deleted_message_id);
                                         git::remove(dir, *deleted_message_id);

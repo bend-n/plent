@@ -123,7 +123,7 @@ pub struct Data {
 pub fn files() -> impl Iterator<Item = (PathBuf, u64)> {
     super::SPECIAL
         .entries()
-        .filter_map(|(&ch, &dir)| {
+        .filter_map(|(&ch, &super::Ch { d: dir, .. })| {
             std::fs::read_dir(Path::new("repo").join(dir))
                 .ok()
                 .map(|x| (x, ch))

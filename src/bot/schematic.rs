@@ -40,6 +40,7 @@ pub async fn from_attachments(attchments: &[Attachment]) -> Result<Option<Schema
 pub async fn with(
     m: Msg,
     c: &serenity::client::Context,
+    labels: Option<String>,
 ) -> Result<ControlFlow<(Message, String, Schematic), ()>> {
     let author = m.author;
     let send = |v: Schematic| async move {
@@ -130,7 +131,10 @@ pub async fn with(
         ))
     };
 
-    if let Ok(Some(v)) = from((&m.content, &m.attachments)).await {
+    if let Ok(Some(mut v)) = from((&m.content, &m.attachments)).await {
+        labels.map(|x| {
+            v.tags.insert("labels".into(), x);
+        });
         return Ok(ControlFlow::Break(send(v).await?));
     }
 
