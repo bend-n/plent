@@ -137,34 +137,29 @@ const SPECIAL: phf::Map<u64, &str> = phf::phf_map! {
 };
 
 #[poise::command(slash_command)]
-pub async fn scour(c: Context<'_>) -> Result<()> {
-    let h = c.say("beginning scour, this may take a bit.").await?;
+pub async fn scour(c: Context<'_>, ch: ChannelId) -> Result<()> {
     let mut n = 0;
-    for (&k, &d) in &SPECIAL {
-        _ = std::fs::create_dir(format!("repo/{d}"));
-        h.edit(
-            c,
-            poise::CreateReply::default().content(format!("scouring {d}...")),
-        )
-        .await?;
-        let mut msgs = ChannelId::new(k).messages_iter(c).boxed();
-        while let Some(msg) = msgs.next().await {
-            let Ok(msg) = msg else {
-                continue;
-            };
-            if let Ok(Some(x)) = schematic::from((&msg.content, &msg.attachments)).await {
-                let mut w = mindus::data::DataWrite::default();
-                x.serialize(&mut w).unwrap();
-                _ = std::fs::write(format!("repo/{d}/{:x}.msch", msg.id.get()), w.consume());
-                msg.react(c, emojis::get!(MERGE)).await?;
-                n += 1;
-            }
+    let d = SPECIAL[&ch.get()];
+    let h = c.say(format!("scouring {d}...")).await?;
+    _ = std::fs::create_dir(format!("repo/{d}"));
+    let mut msgs = ch.messages_iter(c).boxed();
+    while let Some(msg) = msgs.next().await {
+        let Ok(msg) = msg else {
+            continue;
+        };
+        if let Ok(Some(x)) = schematic::from((&msg.content, &msg.attachments)).await {
+            let mut w = mindus::data::DataWrite::default();
+            x.serialize(&mut w).unwrap();
+            _ = std::fs::write(format!("repo/{d}/{:x}.msch", msg.id.get()), w.consume());
+            msg.react(c, emojis::get!(MERGE)).await?;
+            n += 1;
         }
     }
     h.edit(
         c,
-        poise::CreateReply::default()
-            .content(format!("done! <:merge:1192387272046284800> {n} schems")),
+        poise::CreateReply::default().content(format!(
+            "done scouring <#{ch}>! <:merge:1192387272046284800> {n} schems"
+        )),
     )
     .await?;
     Ok(())
