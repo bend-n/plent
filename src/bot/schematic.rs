@@ -1,4 +1,5 @@
 use anyhow::Result;
+use logos::Logos;
 use mindus::data::DataRead;
 use mindus::*;
 use poise::serenity_prelude::*;
@@ -60,48 +61,10 @@ pub async fn with(
                                 .attachment("image.png")
                                 .author(CreateEmbedAuthor::new(author).icon_url(m.avatar));
                             if let Some(tags) = v.tags.get("labels") {
-                                // yes, this is incorrect. no, i dont care if your tag is `\u{208} useful tag`.
-                                static RE: LazyLock<Regex> =
-                                    LazyLock::new(|| Regex::new(r"\\u\{([a-f0-9]+)\}").unwrap());
-                                let mut yes = tags.clone();
-                                for c in RE.captures_iter(&tags) {
-                                    if let Ok(Some(y)) =
-                                        u32::from_str_radix(c.get(1).unwrap().as_str(), 16)
-                                            .map(char::from_u32)
-                                    {
-                                        yes = yes.replace(
-                                            c.get(0).unwrap().as_str(),
-                                            y.encode_utf8(&mut [0; 4]),
-                                        );
-                                    }
-                                }
-                                let mut s = yes[1..].as_bytes();
-                                let mut o = vec![];
-                                let mut t = Vec::new();
-
-                                while s.len() > 0 {
-                                    loop {
-                                        let b = s[0];
-                                        s = &s[1..];
-                                        match b {
-                                            b',' | b']' => {
-                                                o.push(emoji::mindustry::to_discord(
-                                                    std::str::from_utf8(&t)
-                                                        .unwrap()
-                                                        .trim()
-                                                        .trim_start_matches('"')
-                                                        .trim_end_matches('"'),
-                                                ));
-                                                break;
-                                            }
-                                            b => t.push(b),
-                                        }
-                                    }
-                                    t.clear();
-                                }
                                 e = e.field(
                                     "tags",
-                                    o.iter()
+                                    decode_tags(tags)
+                                        .iter()
                                         .map(String::as_str)
                                         .intersperse(" | ")
                                         .fold(String::new(), |acc, x| acc + x),
@@ -162,4 +125,27 @@ pub fn from_msg(msg: &str) -> Result<Option<Schematic>> {
     .as_str()
     .trim();
     Ok(Some(Schematic::deserialize_base64(schem_text)?))
+}
+
+fn decode_tags(tags: &str) -> Vec<String> {
+    #[derive(logos::Logos, PartialEq, Debug)]
+    #[logos(skip r"[\s\n,]+")]
+    enum Tokens<'s> {
+        #[token("[", priority = 8)]
+        Open,
+        #[token("]", priority = 8)]
+        Close,
+        #[regex(r#""[^"]+""#, priority = 7, callback = |x| &x.slice()[1..x.slice().len()-1])]
+        #[regex(r"[^,\]\[]+", priority = 6)]
+        String(&'s str),
+    }
+    let mut lexer = Tokens::lexer(&tags);
+    let mut t = Vec::new();
+    let mut next = || lexer.find_map(|x| x.ok());
+    assert_eq!(next().unwrap(), Tokens::Open);
+    while let Some(Tokens::String(x)) = next() {
+        t.push(emoji::mindustry::to_discord(x));
+    }
+    assert_eq!(lexer.next(), None);
+    t
 }
