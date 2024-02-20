@@ -137,9 +137,7 @@ pub async fn scour(c: Context<'_>, ch: ChannelId) -> Result<()> {
             continue;
         };
         if let Ok(Some(x)) = schematic::from((&msg.content, &msg.attachments)).await {
-            let mut w = mindus::data::DataWrite::default();
-            x.serialize(&mut w).unwrap();
-            _ = std::fs::write(format!("repo/{d}/{:x}.msch", msg.id.get()), w.consume());
+            _ = std::fs::write(format!("repo/{d}/{:x}.msch", msg.id.get()), x.data);
             msg.react(c, emojis::get!(MERGE)).await?;
             n += 1;
         }
@@ -183,6 +181,8 @@ where
 }
 
 mod git {
+    use self::schematic::Schem;
+
     use super::*;
     pub fn schem(dir: &str, x: MessageId) -> std::io::Result<mindus::Schematic> {
         std::fs::read(path(dir, x))
@@ -253,11 +253,9 @@ mod git {
             .success())
     }
 
-    pub fn write(dir: &str, x: MessageId, s: &mindus::Schematic) {
+    pub fn write(dir: &str, x: MessageId, s: Schem) {
         _ = std::fs::create_dir(format!("repo/{dir}"));
-        let mut w = mindus::data::DataWrite::default();
-        s.serialize(&mut w).unwrap();
-        std::fs::write(path(dir, x), w.consume()).unwrap();
+        std::fs::write(path(dir, x), s.data).unwrap();
         add();
     }
 
@@ -361,17 +359,17 @@ impl Bot {
                                     }
                                     if let Some(dir) = dir {
                                         // add :)
-                                        git::write(dir, new_message.id, &s);
+                                        send(c,|x| x
+                                            .avatar_url(new_message.author.avatar_url().unwrap_or(CAT.to_string()))
+                                            .username(&who)
+                                            .embed(CreateEmbed::new().color(AD)
+                                                .description(format!("https://discord.com/channels/925674713429184564/{}/{} {ADD} add {} (`{:x}.msch`)", m.channel_id,m.id, emoji::mindustry::to_discord(&strip_colors(s.tags.get("name").unwrap())), new_message.id.get())))
+                                        ).await;
+                                        git::write(dir, new_message.id, s);
                                         git::add();
                                         git::commit(&who, &format!("add {:x}.msch", new_message.id.get()));
                                         git::push();
                                         new_message.react(c, emojis::get!(MERGE)).await?;
-                                        send(c,|x| x
-                                            .avatar_url(new_message.author.avatar_url().unwrap_or(CAT.to_string()))
-                                            .username(who)
-                                            .embed(CreateEmbed::new().color(AD)
-                                                .description(format!("https://discord.com/channels/925674713429184564/{}/{} {ADD} add {} (`{:x}.msch`)", m.channel_id,m.id, emoji::mindustry::to_discord(&strip_colors(s.tags.get("name").unwrap())), new_message.id.get())))
-                                        ).await;
                                     }
                                     d.tracker.insert(new_message.id, m);
                                     return Ok(());
@@ -412,15 +410,15 @@ impl Bot {
                                         d.tracker.insert(*id, m);
                                         if let Some(dir) = dir && git::has(dir, *id) {
                                             // update :)
-                                            git::write(dir, *id, &s);
-                                            git::commit(&who,&format!("update {:x}.msch", id.get()));
-                                            git::push();
                                             send(c,|x| x
                                                 .avatar_url(author.avatar_url().unwrap_or(CAT.to_string()))
-                                                .username(who)
+                                                .username(&who)
                                                 .embed(CreateEmbed::new().color(AD)
                                                     .description(format!("https://discord.com/channels/925674713429184564/{channel_id}/{id} {ROTATE} update {} (`{:x}.msch`)", emoji::mindustry::to_discord(&strip_colors(s.tags.get("name").unwrap())), id.get())))
                                             ).await;
+                                            git::write(dir, *id, s);
+                                            git::commit(&who,&format!("update {:x}.msch", id.get()));
+                                            git::push();
                                         }
                                     }
                                 }
