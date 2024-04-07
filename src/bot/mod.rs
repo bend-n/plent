@@ -115,6 +115,7 @@ decl! {
     1158818598568075365u64 => "unit-raw" : [UNITS, PRODUCTION],
     1142181013779398676u64 => "unit-sand" : [UNITS, SAND],
     1222270513045438464u64 => "bore": [PRODUCTION],
+    1226407271978766356u64 => "pulveriser": [PULVERIZER, SAND],
 
     1129391545418797147u64,
 }
@@ -129,8 +130,13 @@ fn sep(x: Option<&Ch>) -> (Option<&'static str>, Option<String>) {
     (x.map(|x| x.d), x.map(|x| tags(x.labels)))
 }
 
+const OWNER: u64 = 696196765564534825;
 #[poise::command(slash_command)]
 pub async fn scour(c: Context<'_>, ch: ChannelId) -> Result<()> {
+    if c.author().id != OWNER {
+        poise::say_reply(c, "access denied. this incident will be reported").await?;
+        return Ok(());
+    }
     let mut n = 0;
     let d = SPECIAL[&ch.get()].d;
     let h = c.say(format!("scouring {d}...")).await?;
@@ -287,7 +293,7 @@ impl Bot {
             std::env::var("TOKEN").unwrap_or_else(|_| read_to_string("token").expect("wher token"));
         let f = poise::Framework::builder()
             .options(poise::FrameworkOptions {
-                commands: vec![logic::run(), help(), search::search() ,search::find(), search::file()],
+                commands: vec![logic::run(), help(), scour(), search::search() ,search::find(), search::file()],
                 event_handler: |c, e, _, d| {
                     Box::pin(async move {
                         match e {
@@ -468,7 +474,7 @@ impl Bot {
             .setup(|ctx, _ready, _| {
                 Box::pin(async move {
                     poise::builtins::register_globally(ctx, &[logic::run(), help()]).await?;
-                    poise::builtins::register_in_guild(ctx, &[search::search(), search::find(), search::file()], 925674713429184564.into()).await?;
+                    poise::builtins::register_in_guild(ctx, &[search::search(), scour(), search::find(), search::file()], 925674713429184564.into()).await?;
                     println!("registered");
                     let tracker = Arc::new(DashMap::new());
                     let tc = Arc::clone(&tracker);
