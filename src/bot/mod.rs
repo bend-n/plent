@@ -8,7 +8,6 @@ use dashmap::DashMap;
 use mindus::Serializable;
 use poise::serenity_prelude::*;
 use serenity::futures::StreamExt;
-use serenity::model::channel::Message;
 use std::collections::HashSet;
 use std::fmt::Write;
 use std::fs::read_to_string;
@@ -363,27 +362,36 @@ impl Bot {
                                     channel: new_message.channel_id,
                                 };
                                 let (dir, l) = sep(SPECIAL.get(&new_message.channel_id.get()));
-                                if let ControlFlow::Break((m,n, s)) = schematic::with(m, c, l).await? {
-                                    if THREADED.contains(&m.channel_id.get()) {
-                                        m.channel_id.create_thread_from_message(c, m.id,CreateThread::new(n).audit_log_reason("because yes").auto_archive_duration(AutoArchiveDuration::OneDay)).await.unwrap();
-                                    }
-                                    if let Some(dir) = dir {
-                                        // add :)
-                                        send(c,|x| x
-                                            .avatar_url(new_message.author.avatar_url().unwrap_or(CAT.to_string()))
-                                            .username(&who)
-                                            .embed(CreateEmbed::new().color(AD)
-                                                .description(format!("https://discord.com/channels/925674713429184564/{}/{} {ADD} add {} (`{:x}.msch`)", m.channel_id,m.id, emoji::mindustry::to_discord(&strip_colors(s.tags.get("name").unwrap())), new_message.id.get())))
-                                        ).await;
-                                        git::write(dir, new_message.id, s);
-                                        git::add();
-                                        git::commit(&who, &format!("add {:x}.msch", new_message.id.get()));
-                                        git::push();
-                                        new_message.react(c, emojis::get!(MERGE)).await?;
-                                    }
-                                    d.tracker.insert(new_message.id, m);
-                                    return Ok(());
-                                }
+                                let x = schematic::with(m, c, l).await?;
+                                match x {
+                                    ControlFlow::Continue(()) if THREADED.contains(&new_message.channel_id.get()) => {
+                                        new_message.delete(c).await?;
+                                        return Ok(());
+                                    },
+                                    ControlFlow::Break((m, n, s)) => {
+                                        if THREADED.contains(&m.channel_id.get()) {
+                                            m.channel_id.create_thread_from_message(c, m.id,CreateThread::new(n).audit_log_reason("because yes").auto_archive_duration(AutoArchiveDuration::OneDay)).await.unwrap();
+                                        }
+                                        if let Some(dir) = dir {
+                                            // add :)
+                                            send(c,|x| x
+                                                .avatar_url(new_message.author.avatar_url().unwrap_or(CAT.to_string()))
+                                                .username(&who)
+                                                .embed(CreateEmbed::new().color(AD)
+                                                    .description(format!("https://discord.com/channels/925674713429184564/{}/{} {ADD} add {} (`{:x}.msch`)", m.channel_id,m.id, emoji::mindustry::to_discord(&strip_colors(s.tags.get("name").unwrap())), new_message.id.get())))
+                                            ).await;
+                                            git::write(dir, new_message.id, s);
+                                            git::add();
+                                            git::commit(&who, &format!("add {:x}.msch", new_message.id.get()));
+                                            git::push();
+                                            new_message.react(c, emojis::get!(MERGE)).await?;
+                                        }
+                                        d.tracker.insert(new_message.id, m);
+                                        return Ok(());
+                                    },
+                                    _ => (),
+                                };
+                                
                                 // not tracked, as you cant add a attachment afterwwards.
                                 map::with(new_message, c).await?;
                             }
