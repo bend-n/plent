@@ -116,27 +116,33 @@ pub async fn find(
 
 #[derive(Copy, Clone)]
 pub struct Data {
-    channel: u64,
-    message: u64,
+    pub channel: u64,
+    pub message: u64,
+}
+
+pub fn dir(x: u64) -> Option<impl Iterator<Item = PathBuf>> {
+    std::fs::read_dir(Path::new("repo").join(super::SPECIAL[&x].d))
+        .ok()
+        .map(|x| x.filter_map(Result::ok).map(move |f| f.path()))
 }
 
 pub fn files() -> impl Iterator<Item = (PathBuf, u64)> {
     super::SPECIAL
-        .entries()
-        .filter_map(|(&ch, &super::Ch { d: dir, .. })| {
-            std::fs::read_dir(Path::new("repo").join(dir))
-                .ok()
-                .map(|x| (x, ch))
-        })
-        .map(|(fs, channel)| fs.filter_map(Result::ok).map(move |f| (f.path(), channel)))
+        .keys()
+        .filter_map(|&ch| dir(ch).map(|x| (x, ch)))
+        .map(|(fs, channel)| fs.map(move |f| (f, channel)))
         .flatten()
+}
+
+pub fn load(f: &Path) -> Schematic {
+    let dat = std::fs::read(f).unwrap();
+    let mut dat = DataRead::new(&dat);
+    Schematic::deserialize(&mut dat).unwrap()
 }
 
 pub fn schems() -> impl Iterator<Item = (Schematic, Data)> {
     files().map(|(f, channel)| {
-        let dat = std::fs::read(&f).unwrap();
-        let mut dat = DataRead::new(&dat);
-        let ts = Schematic::deserialize(&mut dat).unwrap();
+        let ts = load(&f);
         let x = f.file_name().unwrap().to_string_lossy();
         (
             ts,

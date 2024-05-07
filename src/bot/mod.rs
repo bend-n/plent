@@ -5,6 +5,7 @@ mod search;
 
 use anyhow::Result;
 use dashmap::DashMap;
+use mindus::data::DataWrite;
 use mindus::Serializable;
 use poise::serenity_prelude::*;
 use serenity::futures::StreamExt;
@@ -129,6 +130,32 @@ fn sep(x: Option<&Ch>) -> (Option<&'static str>, Option<String>) {
     (x.map(|x| x.d), x.map(|x| tags(x.labels)))
 }
 
+#[poise::command(slash_command)]
+pub async fn tag(c: Context<'_>) -> Result<()> {
+    if c.author().id != OWNER {
+        poise::say_reply(c, "access denied. this incident will be reported").await?;
+        return Ok(());
+    }
+    c.defer().await?;
+    for (tags, schem) in SPECIAL.keys().filter_map(|&x| search::dir(x).map(move |y| y.map(move |y| (tags(SPECIAL[&x].labels), y)))).flatten() {
+        let mut s = search::load(&schem);
+        let mut v = DataWrite::default();
+        s.tags.insert("labels".into(), tags);
+        s.serialize(&mut v)?;
+        std::fs::write(schem, v.consume())?;
+    }
+    send(&c, |x| {
+        x.avatar_url(CAT.to_string()).username("bendn <3").embed(
+            CreateEmbed::new()
+                .color(RM)
+                .description(format!("fixed tags :heart:")),
+        )
+    })
+    .await;
+    c.reply("fin").await?;
+    Ok(())
+}
+
 const OWNER: u64 = 696196765564534825;
 #[poise::command(slash_command)]
 pub async fn scour(c: Context<'_>, ch: ChannelId) -> Result<()> {
@@ -146,7 +173,9 @@ pub async fn scour(c: Context<'_>, ch: ChannelId) -> Result<()> {
             continue;
         };
         if let Ok(Some(x)) = schematic::from((&msg.content, &msg.attachments)).await {
-            _ = std::fs::write(format!("repo/{d}/{:x}.msch", msg.id.get()), x.data);
+            let mut v = DataWrite::default();
+            x.serialize(&mut v).unwrap();
+            _ = std::fs::write(format!("repo/{d}/{:x}.msch", msg.id.get()), v.consume());
             msg.react(c, emojis::get!(MERGE)).await?;
             n += 1;
         }
@@ -190,6 +219,8 @@ where
 }
 
 mod git {
+    use mindus::data::DataWrite;
+
     use self::schematic::Schem;
 
     use super::*;
@@ -264,7 +295,9 @@ mod git {
 
     pub fn write(dir: &str, x: MessageId, s: Schem) {
         _ = std::fs::create_dir(format!("repo/{dir}"));
-        std::fs::write(path(dir, x), s.data).unwrap();
+        let mut v = DataWrite::default();
+        s.serialize(&mut v).unwrap();
+        std::fs::write(path(dir, x), v.consume()).unwrap();
         add();
     }
 
@@ -283,6 +316,7 @@ const RM: (u8, u8, u8) = (242, 121, 131);
 const AD: (u8, u8, u8) = (128, 191, 255);
 const CAT: &str =
     "https://cdn.discordapp.com/avatars/696196765564534825/6f3c605329ffb5cfb790343f59ed355d.webp";
+
 pub struct Bot;
 impl Bot {
     pub async fn spawn() {
@@ -292,7 +326,7 @@ impl Bot {
             std::env::var("TOKEN").unwrap_or_else(|_| read_to_string("token").expect("wher token"));
         let f = poise::Framework::builder()
             .options(poise::FrameworkOptions {
-                commands: vec![logic::run(), help(), scour(), search::search() ,search::find(), search::file()],
+                commands: vec![logic::run(), help(), scour(), search::search(), search::find(), search::file(), tag()],
                 event_handler: |c, e, _, d| {
                     Box::pin(async move {
                         match e {
@@ -482,7 +516,7 @@ impl Bot {
             .setup(|ctx, _ready, _| {
                 Box::pin(async move {
                     poise::builtins::register_globally(ctx, &[logic::run(), help()]).await?;
-                    poise::builtins::register_in_guild(ctx, &[search::search(), scour(), search::find(), search::file()], 925674713429184564.into()).await?;
+                    poise::builtins::register_in_guild(ctx, &[tag(), search::search(), scour(), search::find(), search::file()], 925674713429184564.into()).await?;
                     println!("registered");
                     let tracker = Arc::new(DashMap::new());
                     let tc = Arc::clone(&tracker);

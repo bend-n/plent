@@ -16,7 +16,6 @@ static RE: LazyLock<Regex> =
 
 pub struct Schem {
     schem: Schematic,
-    pub data: Vec<u8>, // work around bugs
 }
 
 impl Deref for Schem {
@@ -36,7 +35,7 @@ pub async fn from_attachments(attchments: &[Attachment]) -> Result<Option<Schem>
                 println!("failed to read {}", a.filename);
                 continue;
             };
-            return Ok(Some(Schem { schem: s, data: sd }));
+            return Ok(Some(Schem { schem: s }));
         // discord uploads base64 as a file when its too long
         } else if a.filename == "message.txt" {
             let Ok(s) = String::from_utf8(a.download().await?) else {
@@ -54,10 +53,7 @@ pub async fn from_attachments(attchments: &[Attachment]) -> Result<Option<Schem>
                 println!("failed to read msg.txt");
                 continue;
             };
-            return Ok(Some(Schem {
-                schem: s,
-                data: buff,
-            }));
+            return Ok(Some(Schem { schem: s }));
         }
     }
     Ok(None)
@@ -157,10 +153,7 @@ pub fn from_msg(msg: &str) -> Result<Option<Schem>> {
             buff.truncate(n_out);
             Schematic::deserialize(&mut DataRead::new(&buff)).map_err(anyhow::Error::from)
         })?;
-    Ok(Some(Schem {
-        schem: s,
-        data: buff,
-    }))
+    Ok(Some(Schem { schem: s }))
 }
 
 fn decode_tags(tags: &str) -> Vec<String> {
