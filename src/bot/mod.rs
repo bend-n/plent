@@ -647,14 +647,23 @@ pub async fn help(
     #[autocomplete = "poise::builtins::autocomplete_command"]
     command: Option<String>,
 ) -> Result<()> {
-    ctx.send(poise::CreateReply::default().ephemeral(true).content(
-        if matches!(
-            command.as_deref(),
-            Some("eval") | Some("exec") | Some("run")
-        ) {
-            include_str!("help_eval.md")
-        } else {
-            include_str!("usage.md")
+    macro_rules! pick {
+        ($e:literal, $u:literal) => {
+            if matches!(
+                command.as_deref(),
+                Some("eval") | Some("exec") | Some("run")
+            ) {
+                include_str!($e)
+            } else {
+                include_str!($u)
+            }
+        }
+    }
+
+    ctx.send(poise::CreateReply::default().allowed_mentions(CreateAllowedMentions::new()).content(
+        match ctx.locale() {
+            Some("ru") => pick!("help_eval_ru.md", "usage_ru.md"),
+            _ => pick!("help_eval.md", "usage.md")
         },
     ))
     .await?;
