@@ -16,7 +16,7 @@ use std::ops::ControlFlow;
 use std::path::Path;
 use std::process::Stdio;
 use std::sync::{Arc, LazyLock, OnceLock};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tokio::sync::Mutex;
 
 #[derive(Debug)]
@@ -137,7 +137,11 @@ pub async fn tag(c: Context<'_>) -> Result<()> {
         return Ok(());
     }
     c.defer().await?;
-    for (tags, schem) in SPECIAL.keys().filter_map(|&x| search::dir(x).map(move |y| y.map(move |y| (tags(SPECIAL[&x].labels), y)))).flatten() {
+    for (tags, schem) in SPECIAL
+        .keys()
+        .filter_map(|&x| search::dir(x).map(move |y| y.map(move |y| (tags(SPECIAL[&x].labels), y))))
+        .flatten()
+    {
         let mut s = search::load(&schem);
         let mut v = DataWrite::default();
         s.tags.insert("labels".into(), tags);
@@ -326,7 +330,7 @@ impl Bot {
             std::env::var("TOKEN").unwrap_or_else(|_| read_to_string("token").expect("wher token"));
         let f = poise::Framework::builder()
             .options(poise::FrameworkOptions {
-                commands: vec![logic::run(), help(), scour(), search::search(), search::find(), search::file(), tag()],
+                commands: vec![logic::run(), ping(), help(), scour(), search::search(), search::find(), search::file(), tag()],
                 event_handler: |c, e, _, d| {
                     Box::pin(async move {
                         match e {
@@ -425,7 +429,7 @@ impl Bot {
                                     },
                                     _ => (),
                                 };
-                                
+
                                 // not tracked, as you cant add a attachment afterwwards.
                                 map::with(new_message, c).await?;
                             }
@@ -515,7 +519,7 @@ impl Bot {
             })
             .setup(|ctx, _ready, _| {
                 Box::pin(async move {
-                    poise::builtins::register_globally(ctx, &[logic::run(), help()]).await?;
+                    poise::builtins::register_globally(ctx, &[logic::run(), help(), ping()]).await?;
                     poise::builtins::register_in_guild(ctx, &[tag(), search::search(), scour(), search::find(), search::file()], 925674713429184564.into()).await?;
                     println!("registered");
                     let tracker = Arc::new(DashMap::new());
@@ -657,15 +661,17 @@ pub async fn help(
             } else {
                 include_str!($u)
             }
-        }
+        };
     }
 
-    ctx.send(poise::CreateReply::default().allowed_mentions(CreateAllowedMentions::new()).content(
-        match ctx.locale() {
-            Some("ru") => pick!("help_eval_ru.md", "usage_ru.md"),
-            _ => pick!("help_eval.md", "usage.md")
-        },
-    ))
+    ctx.send(
+        poise::CreateReply::default()
+            .allowed_mentions(CreateAllowedMentions::new())
+            .content(match ctx.locale() {
+                Some("ru") => pick!("help_eval_ru.md", "usage_ru.md"),
+                _ => pick!("help_eval.md", "usage.md"),
+            }),
+    )
     .await?;
     Ok(())
 }
@@ -691,4 +697,29 @@ pub fn png(p: fimg::Image<Vec<u8>, 3>) -> Vec<u8> {
         ..oxipng::Options::from_preset(0)
     })
     .unwrap()
+}
+
+#[poise::command(slash_command)]
+/// Pong!
+pub async fn ping(c: Context<'_>) -> Result<()> {
+    use emoji::named::*;
+    let m = memory_stats::memory_stats().unwrap().physical_mem as f32 / (1 << 20) as f32;
+    // let m = (m / 0.1) + 0.5;
+    // let m = m.floor() * 0.1;
+    c.reply(format!(
+        "pong!\n{DISCORD}{RIGHT}: {} — {HOST} mem used: {m:.1}MiB — <:time:1244901561688260742> uptime: {}",
+        humantime::format_duration(Duration::from_millis(
+            Timestamp::now()
+                .signed_duration_since(*c.created_at())
+                .to_std()?
+                .as_millis() as _
+        )),
+        humantime::format_duration(Duration::from_secs(
+            Instant::now()
+                .duration_since(*super::START.get().unwrap())
+                .as_secs()
+        ))
+    ))
+    .await?;
+    Ok(())
 }

@@ -38,6 +38,8 @@ jemallocator-global = "0.3.2"
 const_format = { version = "0.2.32", features = ["fmt"] }
 logos = "0.14.0"
 base64 = "0.21.7"
+humantime = "2.1.0"
+memory-stats = { version = "1.1.0", features = ["always_use_statm"] }
 
 [profile.release]
 strip = true
