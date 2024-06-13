@@ -3,7 +3,7 @@ use base64::Engine;
 use logos::Logos;
 use mindus::data::DataRead;
 use mindus::*;
-use poise::serenity_prelude::*;
+use poise::{serenity_prelude::*, CreateReply};
 use regex::Regex;
 use std::ops::ControlFlow;
 use std::sync::LazyLock;
@@ -59,67 +59,98 @@ pub async fn from_attachments(attchments: &[Attachment]) -> Result<Option<Schem>
     Ok(None)
 }
 
+pub async fn reply(v: Schem, author: &str, avatar: &str) -> Result<CreateReply> {
+    let name = emoji::mindustry::to_discord(&strip_colors(v.tags.get("name").unwrap()));
+    let vclone = v.clone();
+    let p = tokio::task::spawn_blocking(move || to_png(&vclone)).await?;
+    println!("rend {name}");
+    Ok(CreateReply::default()
+        .attachment(CreateAttachment::bytes(p, "image.png"))
+        .embed({
+            let mut e = CreateEmbed::new()
+                .attachment("image.png")
+                .author(CreateEmbedAuthor::new(author).icon_url(avatar));
+            if let Some(tags) = tags(&v) {
+                e = e.field("tags", tags, true);
+            }
+            if let Some(v) = v
+                .tags
+                .get("description")
+                .map(|t| emoji::mindustry::to_discord(&strip_colors(t)))
+            {
+                e = e.description(v);
+            }
+            e.field("req", cost(&v), true)
+                .title(name.clone())
+                .color(SUCCESS)
+        }))
+}
+
+fn tags(v: &Schem) -> Option<String> {
+    v.tags.get("labels").map(|tags| {
+        decode_tags(tags)
+            .iter()
+            .map(String::as_str)
+            .intersperse(" | ")
+            .fold(String::new(), |acc, x| acc + x)
+    })
+}
+
+fn cost(v: &Schem) -> String {
+    let mut s = String::new();
+    for (i, n) in v.compute_total_cost().0.iter() {
+        if n == 0 {
+            continue;
+        }
+        write!(s, "{} {n} ", emoji::mindustry::item(i)).unwrap();
+    }
+    s
+}
+
+pub async fn send(
+    m: Msg,
+    c: &serenity::client::Context,
+    v: Schem,
+) -> Result<(poise::serenity_prelude::Message, std::string::String, Schem)> {
+    let name = emoji::mindustry::to_discord(&strip_colors(v.tags.get("name").unwrap()));
+    println!("deser {name}");
+    let vclone = v.clone();
+    let p = tokio::task::spawn_blocking(move || to_png(&vclone)).await?;
+    println!("rend {name}");
+    let msg = CreateMessage::new()
+        .add_file(CreateAttachment::bytes(p, "image.png"))
+        .embed({
+            let mut e = CreateEmbed::new()
+                .attachment("image.png")
+                .author(CreateEmbedAuthor::new(m.author).icon_url(m.avatar));
+            if let Some(tags) = tags(&v) {
+                e = e.field("tags", tags, true);
+            }
+            if let Some(v) = v
+                .tags
+                .get("description")
+                .map(|t| emoji::mindustry::to_discord(&strip_colors(t)))
+            {
+                e = e.description(v);
+            }
+            e.field("req", cost(&v), true)
+                .title(name.clone())
+                .color(SUCCESS)
+        });
+    let h = m.channel.send_message(c, msg).await?;
+    Ok((h, name, v))
+}
+
 pub async fn with(
     m: Msg,
     c: &serenity::client::Context,
     labels: Option<String>,
 ) -> Result<ControlFlow<(Message, String, Schem), ()>> {
-    let author = m.author;
-    let send = |v: Schem| async move {
-        let name = emoji::mindustry::to_discord(&strip_colors(v.tags.get("name").unwrap()));
-        println!("deser {name}");
-        let vclone = v.clone();
-        let p = tokio::task::spawn_blocking(move || to_png(&vclone)).await?;
-        println!("rend {name}");
-        anyhow::Ok((
-            m.channel
-                .send_message(
-                    c,
-                    CreateMessage::new()
-                        .add_file(CreateAttachment::bytes(p, "image.png"))
-                        .embed({
-                            let mut e = CreateEmbed::new()
-                                .attachment("image.png")
-                                .author(CreateEmbedAuthor::new(author).icon_url(m.avatar));
-                            if let Some(tags) = v.tags.get("labels") {
-                                e = e.field(
-                                    "tags",
-                                    decode_tags(tags)
-                                        .iter()
-                                        .map(String::as_str)
-                                        .intersperse(" | ")
-                                        .fold(String::new(), |acc, x| acc + x),
-                                    true,
-                                );
-                            }
-                            if let Some(v) = v
-                                .tags
-                                .get("description")
-                                .map(|t| emoji::mindustry::to_discord(&strip_colors(t)))
-                            {
-                                e = e.description(v);
-                            }
-                            let mut s = String::new();
-                            for (i, n) in v.compute_total_cost().0.iter() {
-                                if n == 0 {
-                                    continue;
-                                }
-                                write!(s, "{} {n} ", emoji::mindustry::item(i)).unwrap();
-                            }
-                            e.field("req", s, true).title(name.clone()).color(SUCCESS)
-                        }),
-                )
-                .await?,
-            name,
-            v,
-        ))
-    };
-
     if let Ok(Some(mut v)) = from((&m.content, &m.attachments)).await {
         labels.map(|x| {
             v.schem.tags.insert("labels".into(), x);
         });
-        return Ok(ControlFlow::Break(send(v).await?));
+        return Ok(ControlFlow::Break(send(m, c, v).await?));
     }
 
     Ok(ControlFlow::Continue(()))
@@ -145,6 +176,10 @@ pub fn from_msg(msg: &str) -> Result<Option<Schem>> {
     .unwrap()
     .as_str()
     .trim();
+    Ok(Some(from_b64(schem_text)?))
+}
+
+pub fn from_b64(schem_text: &str) -> Result<Schem> {
     let mut buff = vec![0; schem_text.len() / 4 * 3 + 1];
     let s = base64::engine::general_purpose::STANDARD
         .decode_slice(schem_text.as_bytes(), &mut buff)
@@ -153,7 +188,7 @@ pub fn from_msg(msg: &str) -> Result<Option<Schem>> {
             buff.truncate(n_out);
             Schematic::deserialize(&mut DataRead::new(&buff)).map_err(anyhow::Error::from)
         })?;
-    Ok(Some(Schem { schem: s }))
+    Ok(Schem { schem: s })
 }
 
 fn decode_tags(tags: &str) -> Vec<String> {

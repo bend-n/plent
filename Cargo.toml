@@ -19,7 +19,9 @@ serenity = { version = "0.12", features = [
   "gateway",
   "model",
 ], default-features = false }
-poise = { git = "https://github.com/serenity-rs/poise" }
+poise = { git = "https://github.com/fgardt/poise", features = [
+  "unstable",
+], branch = "feat/user_apps" }
 anyhow = "1.0.75"
 regex = { version = "1.8.4", features = ["std"], default-features = false }
 btparse = "0.1.1"
@@ -54,4 +56,4 @@ opt-level = 3
 debug-assertions = false
 
 [patch.crates-io]
-serenity = { git = "https://github.com/bend-n/serenity", branch = "opt" }
+serenity = { git = "https://github.com/serenity-rs/serenity" }

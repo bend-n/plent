@@ -7,7 +7,7 @@ use anyhow::Result;
 use dashmap::DashMap;
 use mindus::data::DataWrite;
 use mindus::Serializable;
-use poise::serenity_prelude::*;
+use poise::{serenity_prelude::*, CreateReply};
 use serenity::futures::StreamExt;
 use std::collections::HashSet;
 use std::fmt::Write;
@@ -330,7 +330,7 @@ impl Bot {
             std::env::var("TOKEN").unwrap_or_else(|_| read_to_string("token").expect("wher token"));
         let f = poise::Framework::builder()
             .options(poise::FrameworkOptions {
-                commands: vec![logic::run(), ping(), help(), scour(), search::search(), search::find(), search::file(), tag()],
+                commands: vec![logic::run(), ping(), help(), scour(), search::search(), search::find(), search::file(), tag(), render(), render_file(), render_message()],
                 event_handler: |c, e, _, d| {
                     Box::pin(async move {
                         match e {
@@ -519,7 +519,7 @@ impl Bot {
             })
             .setup(|ctx, _ready, _| {
                 Box::pin(async move {
-                    poise::builtins::register_globally(ctx, &[logic::run(), help(), ping()]).await?;
+                    poise::builtins::register_globally(ctx, &[logic::run(), help(), ping(), render(), render_file(), render_message()]).await?;
                     poise::builtins::register_in_guild(ctx, &[tag(), search::search(), scour(), search::find(), search::file()], 925674713429184564.into()).await?;
                     println!("registered");
                     let tracker = Arc::new(DashMap::new());
@@ -644,7 +644,11 @@ pub fn strip_colors(from: &str) -> String {
     result
 }
 
-#[poise::command(slash_command)]
+#[poise::command(
+    slash_command,
+    install_context = "User",
+    interaction_context = "BotDm|PrivateChannel"
+)]
 pub async fn help(
     ctx: Context<'_>,
     #[description = "command to show help about"]
@@ -699,7 +703,11 @@ pub fn png(p: fimg::Image<Vec<u8>, 3>) -> Vec<u8> {
     .unwrap()
 }
 
-#[poise::command(slash_command)]
+#[poise::command(
+    slash_command,
+    install_context = "Guild|User",
+    interaction_context = "Guild|BotDm|PrivateChannel"
+)]
 /// Pong!
 pub async fn ping(c: Context<'_>) -> Result<()> {
     use emoji::named::*;
@@ -720,6 +728,110 @@ pub async fn ping(c: Context<'_>) -> Result<()> {
                 .as_secs()
         ))
     ))
+    .await?;
+    Ok(())
+}
+
+#[poise::command(
+    slash_command,
+    install_context = "User",
+    interaction_context = "Guild|BotDm|PrivateChannel"
+)]
+/// Renders base64 schematic.
+pub async fn render(c: Context<'_>, #[description = "schematic, base64"] s: String) -> Result<()> {
+    let Ok(s) = schematic::from_b64(&s) else {
+        poise::send_reply(
+            c,
+            CreateReply::default()
+                .content("schem broken / not schem")
+                .ephemeral(true),
+        )
+        .await?;
+        return Ok(());
+    };
+    poise::send_reply(
+        c,
+        schematic::reply(
+            s,
+            &c.author().name,
+            &c.author().avatar_url().unwrap_or(CAT.to_string()),
+        )
+        .await?,
+    )
+    .await?;
+    Ok(())
+}
+
+#[poise::command(
+    slash_command,
+    install_context = "User",
+    interaction_context = "Guild|BotDm|PrivateChannel"
+)]
+/// Renders map/msch schematic.
+pub async fn render_file(
+    c: Context<'_>,
+    #[description = "map / schematic, msch"] s: Attachment,
+) -> Result<()> {
+    _ = c.defer().await;
+
+    let Some(s) = schematic::from_attachments(std::slice::from_ref(&s)).await? else {
+        match map::reply(&s).await? {
+            ControlFlow::Break(x) => return Ok(drop(poise::send_reply(c, x).await?)),
+            ControlFlow::Continue(e) if e != "not a map." => {
+                return Ok(drop(poise::say_reply(c, e).await?))
+            }
+            ControlFlow::Continue(_) => (),
+        };
+        poise::send_reply(
+            c,
+            CreateReply::default()
+                .content("no schem found")
+                .ephemeral(true),
+        )
+        .await?;
+        return Ok(());
+    };
+    poise::send_reply(
+        c,
+        schematic::reply(
+            s,
+            &c.author().name,
+            &c.author().avatar_url().unwrap_or(CAT.to_string()),
+        )
+        .await?,
+    )
+    .await?;
+    Ok(())
+}
+
+#[poise::command(
+    context_menu_command = "Render schematic",
+    install_context = "User",
+    interaction_context = "Guild|PrivateChannel"
+)]
+/// Renders schematic inside a message.
+pub async fn render_message(c: Context<'_>, m: Message) -> Result<()> {
+    let Some(s) = schematic::from((&m.content, &m.attachments)).await? else {
+        poise::send_reply(
+            c,
+            CreateReply::default()
+                .content("no schem found")
+                .ephemeral(true),
+        )
+        .await?;
+        return Ok(());
+    };
+    poise::send_reply(
+        c,
+        schematic::reply(
+            s,
+            &m.author_nick(c)
+                .await
+                .unwrap_or_else(|| m.author.name.clone()),
+            &m.author.avatar_url().unwrap_or(CAT.to_string()),
+        )
+        .await?,
+    )
     .await?;
     Ok(())
 }
