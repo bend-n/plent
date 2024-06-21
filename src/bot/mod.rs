@@ -130,36 +130,6 @@ fn sep(x: Option<&Ch>) -> (Option<&'static str>, Option<String>) {
     (x.map(|x| x.d), x.map(|x| tags(x.labels)))
 }
 
-#[poise::command(slash_command)]
-pub async fn tag(c: Context<'_>) -> Result<()> {
-    if c.author().id != OWNER {
-        poise::say_reply(c, "access denied. this incident will be reported").await?;
-        return Ok(());
-    }
-    c.defer().await?;
-    for (tags, schem) in SPECIAL
-        .keys()
-        .filter_map(|&x| search::dir(x).map(move |y| y.map(move |y| (tags(SPECIAL[&x].labels), y))))
-        .flatten()
-    {
-        let mut s = search::load(&schem);
-        let mut v = DataWrite::default();
-        s.tags.insert("labels".into(), tags);
-        s.serialize(&mut v)?;
-        std::fs::write(schem, v.consume())?;
-    }
-    send(&c, |x| {
-        x.avatar_url(CAT.to_string()).username("bendn <3").embed(
-            CreateEmbed::new()
-                .color(RM)
-                .description(format!("fixed tags :heart:")),
-        )
-    })
-    .await;
-    c.reply("fin").await?;
-    Ok(())
-}
-
 const OWNER: u64 = 696196765564534825;
 #[poise::command(slash_command)]
 pub async fn scour(c: Context<'_>, ch: ChannelId) -> Result<()> {
@@ -330,7 +300,7 @@ impl Bot {
             std::env::var("TOKEN").unwrap_or_else(|_| read_to_string("token").expect("wher token"));
         let f = poise::Framework::builder()
             .options(poise::FrameworkOptions {
-                commands: vec![logic::run(), ping(), help(), scour(), search::search(), search::find(), search::file(), tag(), render(), render_file(), render_message()],
+                commands: vec![logic::run(), ping(), help(), scour(), search::search(), search::file(), render(), render_file(), render_message()],
                 event_handler: |c, e, _, d| {
                     Box::pin(async move {
                         match e {
@@ -520,7 +490,7 @@ impl Bot {
             .setup(|ctx, _ready, _| {
                 Box::pin(async move {
                     poise::builtins::register_globally(ctx, &[logic::run(), help(), ping(), render(), render_file(), render_message()]).await?;
-                    poise::builtins::register_in_guild(ctx, &[tag(), search::search(), scour(), search::find(), search::file()], 925674713429184564.into()).await?;
+                    poise::builtins::register_in_guild(ctx, &[search::search(), scour(), search::file()], 925674713429184564.into()).await?;
                     println!("registered");
                     let tracker = Arc::new(DashMap::new());
                     let tc = Arc::clone(&tracker);
@@ -646,8 +616,8 @@ pub fn strip_colors(from: &str) -> String {
 
 #[poise::command(
     slash_command,
-    install_context = "User",
-    interaction_context = "BotDm|PrivateChannel"
+    install_context = "Guild|User",
+    interaction_context = "Guild|BotDm|PrivateChannel"
 )]
 pub async fn help(
     ctx: Context<'_>,
