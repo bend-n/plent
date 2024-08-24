@@ -1,7 +1,7 @@
 mod logic;
 mod map;
 mod schematic;
-mod search;
+pub mod search;
 
 use anyhow::Result;
 use dashmap::DashMap;
@@ -100,7 +100,7 @@ decl! {
     1147887958351945738u64 => "electrolyzer" : [HYDROGEN, OZONE, ""],
     1202001032503365673u64 => "nitrogen" : [NITROGEN, ""],
     1202001055349477426u64 => "cyanogen" : [CYANOGEN, ""],
-    1096157669112418454u64 => "mass-driver" : [""],
+    1096157669112418454u64 => "mass-driver" : ["…", PLANET],
     973234248054104115u64 => "oxide" : [OXIDE, ""],
     973422874734002216u64 => "erekir-phase" : [PHASE_FABRIC, ""],
     973369188800413787u64 => "ccc" : ["", POWER],
@@ -192,7 +192,7 @@ where
     }
 }
 
-mod git {
+pub mod git {
     use mindus::data::DataWrite;
 
     use self::schematic::Schem;
@@ -520,6 +520,34 @@ impl Bot {
         .unwrap();
     }
 }
+/*
+#[poise::command(slash_command)]
+pub async fn retag(c: Context<'_>, channel: ChannelId) -> Result<()> {
+    if c.author().id != OWNER {
+        poise::say_reply(c, "access denied. this incident will be reported").await?;
+        return Ok(());
+    }
+    c.defer().await?;
+    let tags = tags(SPECIAL[&channel.get()].labels);
+    for schem in search::dir(channel.get()).unwrap() {
+        let mut s = search::load(&schem);
+        let mut v = DataWrite::default();
+        s.tags.insert("labels".into(), tags.clone());
+        s.serialize(&mut v)?;
+        std::fs::write(schem, v.consume())?;
+    }
+    send(&c, |x| {
+        x.avatar_url(CAT.to_string()).username("bendn <3").embed(
+            CreateEmbed::new()
+                .color(RM)
+                .description(format!("fixed tags in <#{channel}> :heart:")),
+        )
+    })
+    .await;
+    c.reply("fin").await?;
+    Ok(())
+}
+*/
 
 pub mod emojis {
     pub const GUILDS: &[u64] = &[1003092764919091282, 925674713429184564];

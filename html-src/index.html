@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="shortcut icon" href="https://apricotalliance.org/schems/favicon.ico" />
+  <title>Curated schematic viewer</title>
+  <style>
+    @font-face {
+      font-family: "default";
+      src: url("/schems/default.woff") format('woff');
+    }
+
+    body {
+      font-family: "default";
+    }
+
+    .schem {
+      min-width: 130px;
+      min-height: 170px;
+      max-width: 130px;
+      max-height: 170px;
+    }
+
+    .bar {
+      display: flex;
+      align-items: center;
+    }
+
+    .rondbutton {
+      /* border: 5px solid #454545; */
+      /* border-radius: 4px; */
+      background-color: transparent;
+      color: white;
+      padding: 10px;
+      margin: 2px;
+      font-size: 1.5em;
+      border-image: url("border.png") 30 / 19px round;
+    }
+
+    .rondbutton:hover {
+      border-image: url("border-hover.png") 30 / 19px round;
+    }
+
+    .rondbutton:active {
+      border-image: url("border-active.png") 30 / 19px round;
+    }
+
+    .rondbutton>span {
+      background-color: black;
+    }
+
+    .squareb {
+      font-size: 1.2em;
+      background-color: transparent;
+      color: #fff;
+      width: 40px;
+      padding: 5px;
+      padding-bottom: 3px;
+      height: 40px;
+      text-align: center;
+      border-color: transparent;
+    }
+
+    .squareb>svg {
+      pointer-events: auto;
+    }
+
+    .squareb:hover {
+      color: #bfbfbf;
+    }
+
+    .squareb:active {
+      color: #ffd37f;
+    }
+
+    .background {
+      border: 5px solid #454545;
+      position: absolute;
+      background-color: #020202;
+      width: 120px;
+      height: 40px;
+      z-index: -1;
+    }
+
+    .preview {
+      border: 5px solid #454545;
+      user-select: none;
+      image-rendering: crisp-edges;
+    }
+
+    .preview:hover {
+      border-color: #ffd37f;
+    }
+
+    button {
+      font-family: inherit;
+      font-size: 1em;
+    }
+
+
+    #grid {
+      width: 100%;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+
+    #grid>* {
+      margin: 5px 3px;
+    }
+
+    body {
+      margin: 0;
+      background-color: #1F1E30;
+    }
+
+    #bg {
+      position: absolute;
+      width: 100%;
+      min-height: 100%;
+      overflow: hidden;
+    }
+
+    #holder {
+      z-index: -1;
+      width: 100%;
+      min-height: 100%;
+      position: absolute;
+      overflow: hidden;
+    }
+
+    #modal {
+      font-size: 0.7em;
+      position: fixed;
+      top: 0;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.6);
+      backdrop-filter: blur(3px);
+      z-index: 2;
+    }
+
+    body.modal-open {
+      height: 100vh;
+      overflow-y: hidden;
+    }
+
+    .hide {
+      visibility: hidden;
+    }
+
+    .title {
+      position: absolute;
+      height: 17px;
+      margin-left: 5px;
+      padding: 0px 2px;
+      background-color: rgba(0, 0, 0, 0.2);
+      color: white;
+      width: 116px;
+      text-shadow: 0 0 5px #3f3f33;
+      margin-top: 5px;
+      font-size: 0.6em;
+      text-align: center;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+  </style>
+</head>
+
+<body id="body">
+  <div id="holder"><img id="bg" src="/schems/bg.png"></div>
+
+  <div id="modal" class="hide">
+    <div style="width: 100%;display: flex;justify-content: center; position: absolute; height: 10px; margin-top: 5px">
+      <span style="color:#ffd37f">[Schematic]
+        <span id="modal-name"></span>
+        (by <span id="modal-author" style="color: #B8C5E8">unknown</span>)
+    </div>
+    <div style="display:flex; justify-content: center; position: absolute; top: 24px; width: 100%">
+      <div style="background-color: #ffd37f; height: 3px;  width: 95%"></div>
+    </div>
+    <div
+      style="display:flex; align-items: center; align-content: center; justify-content: center; position: absolute; top: 50px; bottom: 50px; width: 100%; padding: 10px;">
+      <p id="modal-desc" style="color: white; margin-right: 5px; max-width: 20%; height: 70%"></p>
+      <img id="modal-pic" class="preview" style="height:70%" draggable="false" />
+    </div>
+    <div style="width: 100%;display: flex;justify-content: center; bottom: 0; position: absolute; height: 50px">
+      <button class="rondbutton" onclick="window.close()">
+        <span> back</span>
+      </button>
+      <button class="rondbutton" id="modal-copy">
+        <span> copy</span>
+      </button>
+      <button class="rondbutton" id="modal-download">
+        <span> download</span>
+      </button>
+    </div>
+  </div>
+
+  <div id="grid">
+    <script type="module" src="/schems/index.js"></script>
+    <script>
+      "use strict"
+      let update = () => document.getElementById("holder").style.height = document.getElementById("body").clientHeight + "px";
+      addEventListener('DOMContentLoaded', update, false);
+      addEventListener('load', update, false);
+      addEventListener('scroll', update, false);
+      addEventListener('resize', update, false);
+    </script>
+    <script>
+      function close() {
+        document.getElementById('modal').className = "hide";
+        document.getElementById('modal-author').innerText = "unknown";
+        document.getElementById("body").className = "";
+      }
+      document.onkeydown = (c) => {
+        if (c.key == "Escape") close()
+      }
+    </script>
+</body>
+
+</html>
