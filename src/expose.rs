@@ -119,28 +119,16 @@ impl Server {
             .route(
                 "/blame/:file",
                 get(|Path(file): Path<String>| async move {
-                    match crate::bot::search::files().map(|(x, _)| x).find(|x| {
-                        x.with_extension("").file_name().unwrap().to_string_lossy() == file
-                    }) {
-                        Some(x) => (
-                            StatusCode::OK,
-                            crate::bot::git::whos(
-                                &x.components().nth(1).unwrap().as_os_str().to_str().unwrap(),
-                                u64::from_str_radix(
-                                    &x.with_extension("")
-                                        .file_name()
-                                        .unwrap()
-                                        .to_os_string()
-                                        .to_str()
-                                        .unwrap(),
-                                    16,
-                                )
-                                .unwrap()
-                                .into(),
-                            ),
+                    (
+                        StatusCode::OK,
+                        crate::bot::git::whos(
+                            match u64::from_str_radix(file.trim_end_matches(".msch"), 16) {
+                                Ok(x) => x,
+                                Err(_) => return (StatusCode::NOT_FOUND, "".into()),
+                            }
+                            .into(),
                         ),
-                        None => (StatusCode::NOT_FOUND, String::default()),
-                    }
+                    )
                 }),
             )
             .route(

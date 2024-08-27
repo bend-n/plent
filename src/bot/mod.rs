@@ -1,5 +1,6 @@
 mod logic;
 mod map;
+mod ownership;
 mod schematic;
 pub mod search;
 
@@ -9,12 +10,11 @@ use mindus::data::DataWrite;
 use mindus::Serializable;
 use poise::{serenity_prelude::*, CreateReply};
 use serenity::futures::StreamExt;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::fmt::Write;
 use std::fs::read_to_string;
 use std::ops::ControlFlow;
 use std::path::Path;
-use std::process::Stdio;
 use std::sync::{Arc, LazyLock, OnceLock};
 use std::time::{Duration, Instant};
 use tokio::sync::Mutex;
@@ -154,6 +154,7 @@ pub async fn scour(c: Context<'_>, ch: ChannelId) -> Result<()> {
         if let Ok(Some(mut x)) = schematic::from((&msg.content, &msg.attachments)).await {
             x.schem.tags.insert("labels".into(), tags);
             let who = msg.author_nick(c).await.unwrap_or(msg.author.name.clone());
+            ownership::insert(msg.id.get(), (msg.author.name.clone(), msg.author.id.get()));
             git::write(d, msg.id, x);
             git::commit(&who, &format!("add {:x}.msch", msg.id.get()));
             msg.react(c, emojis::get!(MERGE)).await?;
@@ -224,21 +225,8 @@ pub mod git {
         path(dir, x).exists()
     }
 
-    pub fn whos(dir: &str, x: MessageId) -> String {
-        let mut dat = std::process::Command::new("git")
-            .current_dir("repo")
-            .arg("blame")
-            .arg("--porcelain")
-            .arg(gpath(dir, x))
-            .stdout(Stdio::piped())
-            .spawn()
-            .unwrap()
-            .wait_with_output()
-            .unwrap()
-            .stdout;
-        dat.drain(0..=dat.iter().position(|&x| x == b'\n').unwrap() + "author ".len());
-        dat.truncate(dat.iter().position(|&x| x == b'\n').unwrap());
-        String::from_utf8(dat).unwrap()
+    pub fn whos(x: MessageId) -> String {
+        ownership::get(x.get()).0
     }
 
     pub fn remove(dir: &str, x: MessageId) {
@@ -307,7 +295,7 @@ impl Bot {
             std::env::var("TOKEN").unwrap_or_else(|_| read_to_string("token").expect("wher token"));
         let f = poise::Framework::builder()
             .options(poise::FrameworkOptions {
-                commands: vec![logic::run(), ping(), help(), scour(), retag(), search::search(), search::file(), render(), render_file(), render_message()],
+                commands: vec![logic::run(), lb(), lb_no_vds(), ping(), help(), search::search(), search::file(), render(), render_file(), render_message()],
                 event_handler: |c, e, _, d| {
                     Box::pin(async move {
                         match e {
@@ -320,8 +308,9 @@ impl Bot {
                             FullEvent::ReactionAdd { add_reaction: Reaction { message_id, emoji: ReactionType::Custom {  id,.. } ,channel_id,member: Some(Member{roles,nick,user,..}),..}} if *id == 1192388789952319499 && let Some(Ch {d:dir,..}) = SPECIAL.get(&channel_id.get()) && roles.contains(&RoleId::new(925676016708489227)) => {
                                 let m = c.http().get_message(*channel_id,* message_id).await?;
                                 if let Ok(s) = git::schem(dir,*message_id) {
+                                    ownership::erase(message_id.get());
                                     let who = nick.as_deref().unwrap_or(&user.name);
-                                    let own = git::whos(dir,*message_id);
+                                    let own = git::whos(*message_id);
                                     git::remove(dir, *message_id);
                                     git::commit(who, &format!("remove {:x}.msch", message_id.get()));
                                     git::push();
@@ -389,6 +378,7 @@ impl Bot {
                                         }
                                         if let Some(dir) = dir {
                                             // add :)
+                                            ownership::insert(m.id.get(), (m.author.name.clone(), m.author.id.get()));
                                             send(c,|x| x
                                                 .avatar_url(new_message.author.avatar_url().unwrap_or(CAT.to_string()))
                                                 .username(&who)
@@ -461,7 +451,8 @@ impl Bot {
                             } => {
                                 if let Some(Ch{ d:dir,..}) = SPECIAL.get(&channel_id.get()) {
                                     if let Ok(s) = git::schem(dir, *deleted_message_id) {
-                                        let own = git::whos(dir,*deleted_message_id);
+                                        ownership::erase(deleted_message_id.get());
+                                        let own = git::whos(*deleted_message_id);
                                         git::remove(dir, *deleted_message_id);
                                         git::commit("plent", &format!("remove {:x}", deleted_message_id.get()));
                                         git::push();
@@ -497,7 +488,7 @@ impl Bot {
             .setup(|ctx, _ready, _| {
                 Box::pin(async move {
                     poise::builtins::register_globally(ctx, &[logic::run(), help(), ping(), render(), render_file(), render_message()]).await?;
-                    poise::builtins::register_in_guild(ctx, &[search::search(), retag(), scour(), search::file()], 925674713429184564.into()).await?;
+                    poise::builtins::register_in_guild(ctx, &[search::search(), lb(), lb_no_vds(), search::file()], 925674713429184564.into()).await?;
                     println!("registered");
                     let tracker = Arc::new(DashMap::new());
                     let tc = Arc::clone(&tracker);
@@ -529,6 +520,37 @@ impl Bot {
 }
 
 #[poise::command(slash_command)]
+pub async fn own(c: Context<'_>) -> Result<()> {
+    let h = c.reply(emoji::named::LOCK_OPEN).await?;
+    let mut n = 0;
+    let mut map = HashMap::<u64, (String, u64)>::new();
+    for &id in SPECIAL.keys() {
+        let ch = c.guild().unwrap().channels[&id.into()].clone();
+        let Some(i) = search::dir(id.into()) else {
+            continue;
+        };
+        for f in i {
+            let f = search::flake(f.file_name().unwrap().to_str().unwrap());
+            let User { id, name, .. } = ch.message(c, f).await?.author;
+            map.insert(f, (name, id.get()));
+            n += 1;
+            if n % 10 == 0 {
+                h.edit(
+                    c,
+                    poise::CreateReply::default()
+                        .content(format!("{}: {n}", emoji::named::LOCK_OPEN)),
+                )
+                .await?;
+            }
+        }
+    }
+    std::fs::write("repo/ownership.json", serde_json::to_string(&map).unwrap()).unwrap();
+    h.edit(c, poise::CreateReply::default().content(emoji::named::LOCK))
+        .await?;
+    Ok(())
+}
+
+#[poise::command(slash_command)]
 pub async fn retag(c: Context<'_>, channel: ChannelId) -> Result<()> {
     if c.author().id != OWNER {
         poise::say_reply(c, "access denied. this incident will be reported").await?;
@@ -545,6 +567,125 @@ pub async fn retag(c: Context<'_>, channel: ChannelId) -> Result<()> {
     }
     c.reply(emoji::named::OK).await?;
     Ok(())
+}
+
+// dbg!(m
+//     .iter()
+//     .filter(|x| x.roles.contains(&925676016708489227.into()))
+//     .map(|x| x.user.id.get())
+//     .collect::<Vec<_>>());
+
+const VDS: &[u64] = &[
+    126381304857100288,
+    175218107084832768,
+    221780012372721664,
+    231505175246798851,
+    291255752729821185,
+    301919226078298114,
+    315827169395998720,
+    324736330418487317,
+    325570201837895680,
+    330298929331699713,
+    332054403160735765,
+    343939197738024961,
+    360488990974935040,
+    384188568270274581,
+    387018214103842818,
+    391302959444656128,
+    399346439349600256,
+    404682730190798858,
+    417607639938236427,
+    461517080856887297,
+    464033296012017674,
+    488243005283631106,
+    490271325126918154,
+    514981385660792852,
+    527626094744961053,
+    586994631879819266,
+    595625721129336868,
+    618507912511225876,
+    665938033987682350,
+    696196765564534825,
+    705503407179431937,
+    724657758280089701,
+    729281676441550898,
+    797211831894016012,
+    845191508033667096,
+];
+pub async fn leaderboard(c: Context<'_>, channel: Option<ChannelId>, vds: bool) -> Result<()> {
+    use emoji::named::*;
+    c.defer().await?;
+    let process = |map: HashMap<u64, u16>| {
+        let mut v = map.into_iter().collect::<Vec<_>>();
+        v.sort_by_key(|(_, x)| *x);
+        use std::fmt::Write;
+        let mut out = String::new();
+        v.iter()
+            .rev()
+            .zip(1..)
+            .take(5)
+            .for_each(|((y, z), x)| writeln!(out, "{x}. **<@{y}>**: {z}").unwrap());
+
+        out
+    };
+    match channel {
+        Some(ch) => {
+            let Some(x) = SPECIAL.get(&ch.get()) else {
+                poise::say_reply(c, format!("{CANCEL} not a schem channel")).await?;
+                return Ok(());
+            };
+            let mut map = HashMap::new();
+            search::dir(ch.get())
+                .unwrap()
+                .map(|y| {
+                    ownership::get(search::flake(y.file_name().unwrap().to_str().unwrap()).into()).1
+                })
+                .filter(|x| vds || !VDS.contains(x))
+                .for_each(|x| *map.entry(x).or_default() += 1);
+            poise::say_reply(
+                c,
+                format!(
+                    "## Leaderboard of {}\n{}",
+                    x.labels
+                        .join("")
+                        .chars()
+                        .map(|x| emoji::mindustry::TO_DISCORD[&x])
+                        .collect::<String>(),
+                    process(map)
+                ),
+            )
+        }
+        None => {
+            let mut map = std::collections::HashMap::new();
+            search::files()
+                .map(|(y, _)| {
+                    ownership::get(search::flake(y.file_name().unwrap().to_str().unwrap()).into()).1
+                })
+                .filter(|x| vds || !VDS.contains(x))
+                .for_each(|x| *map.entry(x).or_default() += 1);
+            poise::say_reply(c, format!("## Leaderboard\n{}", process(map)))
+        }
+    }
+    .await?;
+    Ok(())
+}
+
+#[poise::command(slash_command)]
+/// Show the leaderboard for players with the most contributed schems, optionally in a certain channel.
+pub async fn lb(
+    c: Context<'_>,
+    #[description = "optional channel filter"] channel: Option<ChannelId>,
+) -> Result<()> {
+    leaderboard(c, channel, true).await
+}
+
+#[poise::command(slash_command)]
+/// Show the leaderboard for players, excepting verified designers, with the most schemes.
+pub async fn lb_no_vds(
+    c: Context<'_>,
+    #[description = "optional channel filter"] channel: Option<ChannelId>,
+) -> Result<()> {
+    leaderboard(c, channel, false).await
 }
 
 pub mod emojis {

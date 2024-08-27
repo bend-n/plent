@@ -6,7 +6,7 @@ use poise::serenity_prelude::*;
 use std::mem::MaybeUninit;
 use std::path::{Path, PathBuf};
 
-struct Dq<T, const N: usize> {
+pub struct Dq<T, const N: usize> {
     arr: [MaybeUninit<T>; N],
     front: u8,
     len: u8,
