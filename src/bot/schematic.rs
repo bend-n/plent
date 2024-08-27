@@ -15,7 +15,7 @@ static RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"(```)?(\n)?([^`]+)(\n)?(```)?").unwrap());
 
 pub struct Schem {
-    schem: Schematic,
+    pub schem: Schematic,
 }
 
 impl Deref for Schem {

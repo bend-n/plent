@@ -7,8 +7,8 @@ use axum::{
 };
 
 use std::{net::SocketAddr, sync::LazyLock, time::SystemTime};
-const COMPILED_AT: LazyLock<SystemTime> =
-    LazyLock::new(|| edg::r! { || -> std::time::SystemTime { std::time::SystemTime::now() }});
+const COMPILED_AT: LazyLock<SystemTime> = LazyLock::new(|| SystemTime::now());
+// LazyLock::new(|| edg::r! { || -> std::time::SystemTime { std::time::SystemTime::now() }});
 static COMPILED: LazyLock<String> = LazyLock::new(|| httpdate::fmt_http_date(*COMPILED_AT));
 
 fn no_bytes(map: HeaderMap) -> (StatusCode, Option<&'static [u8]>) {

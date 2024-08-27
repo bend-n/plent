@@ -75,7 +75,7 @@ decl! {
     927036346869104693u64 => "plastanium" : [PLASTANIUM, PLASTANIUM_COMPRESSOR],
     925736419983515688u64 => "pyratite" : [PYRATITE, PYRATITE_MIXER],
     925736573037838397u64 => "blast-compound" : [BLAST_COMPOUND, BLAST_MIXER],
-    927793648417009676u64 => "scrap" : [SCRAP],
+    927793648417009676u64 => "scrap" : [DISASSEMBLER, SCRAP],
     1198556531281637506u64 => "spore-press" : [OIL, SPORE_PRESS],
     1200308146460180520u64 => "oil-extractor" : [OIL, OIL_EXTRACTOR],
     1200301847387316317u64 => "rtg-gen" : [POWER, RTG_GENERATOR],
@@ -116,6 +116,8 @@ decl! {
     1142181013779398676u64 => "unit-sand" : [UNITS, SAND],
     1222270513045438464u64 => "bore": [PRODUCTION],
     1226407271978766356u64 => "pulveriser": [PULVERIZER, SAND],
+    1277138620863742003u64 => "melter": [MELTER, SLAG],
+    1277138532355543070u64 => "separator": [SEPARATOR, SCRAP],
 
     1129391545418797147u64,
 }
@@ -146,14 +148,19 @@ pub async fn scour(c: Context<'_>, ch: ChannelId) -> Result<()> {
         let Ok(msg) = msg else {
             continue;
         };
-        if let Ok(Some(x)) = schematic::from((&msg.content, &msg.attachments)).await {
-            let mut v = DataWrite::default();
-            x.serialize(&mut v).unwrap();
-            _ = std::fs::write(format!("repo/{d}/{:x}.msch", msg.id.get()), v.consume());
+        let (_, Some(tags)) = sep(SPECIAL.get(&ch.get())) else {
+            unreachable!()
+        };
+        if let Ok(Some(mut x)) = schematic::from((&msg.content, &msg.attachments)).await {
+            x.schem.tags.insert("labels".into(), tags);
+            let who = msg.author_nick(c).await.unwrap_or(msg.author.name.clone());
+            git::write(d, msg.id, x);
+            git::commit(&who, &format!("add {:x}.msch", msg.id.get()));
             msg.react(c, emojis::get!(MERGE)).await?;
             n += 1;
         }
     }
+    git::push();
     h.edit(
         c,
         poise::CreateReply::default().content(format!(
@@ -300,7 +307,7 @@ impl Bot {
             std::env::var("TOKEN").unwrap_or_else(|_| read_to_string("token").expect("wher token"));
         let f = poise::Framework::builder()
             .options(poise::FrameworkOptions {
-                commands: vec![logic::run(), ping(), help(), scour(), search::search(), search::file(), render(), render_file(), render_message()],
+                commands: vec![logic::run(), ping(), help(), scour(), retag(), search::search(), search::file(), render(), render_file(), render_message()],
                 event_handler: |c, e, _, d| {
                     Box::pin(async move {
                         match e {
@@ -490,7 +497,7 @@ impl Bot {
             .setup(|ctx, _ready, _| {
                 Box::pin(async move {
                     poise::builtins::register_globally(ctx, &[logic::run(), help(), ping(), render(), render_file(), render_message()]).await?;
-                    poise::builtins::register_in_guild(ctx, &[search::search(), scour(), search::file()], 925674713429184564.into()).await?;
+                    poise::builtins::register_in_guild(ctx, &[search::search(), retag(), scour(), search::file()], 925674713429184564.into()).await?;
                     println!("registered");
                     let tracker = Arc::new(DashMap::new());
                     let tc = Arc::clone(&tracker);
@@ -520,7 +527,7 @@ impl Bot {
         .unwrap();
     }
 }
-/*
+
 #[poise::command(slash_command)]
 pub async fn retag(c: Context<'_>, channel: ChannelId) -> Result<()> {
     if c.author().id != OWNER {
@@ -536,18 +543,9 @@ pub async fn retag(c: Context<'_>, channel: ChannelId) -> Result<()> {
         s.serialize(&mut v)?;
         std::fs::write(schem, v.consume())?;
     }
-    send(&c, |x| {
-        x.avatar_url(CAT.to_string()).username("bendn <3").embed(
-            CreateEmbed::new()
-                .color(RM)
-                .description(format!("fixed tags in <#{channel}> :heart:")),
-        )
-    })
-    .await;
-    c.reply("fin").await?;
+    c.reply(emoji::named::OK).await?;
     Ok(())
 }
-*/
 
 pub mod emojis {
     pub const GUILDS: &[u64] = &[1003092764919091282, 925674713429184564];
