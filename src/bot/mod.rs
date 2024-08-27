@@ -576,6 +576,7 @@ pub async fn retag(c: Context<'_>, channel: ChannelId) -> Result<()> {
 //     .collect::<Vec<_>>());
 
 const VDS: &[u64] = &[
+    1222024015015706668,
     126381304857100288,
     175218107084832768,
     221780012372721664,
