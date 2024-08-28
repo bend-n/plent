@@ -291,7 +291,7 @@ impl Bot {
             std::env::var("TOKEN").unwrap_or_else(|_| read_to_string("token").expect("wher token"));
         let f = poise::Framework::builder()
             .options(poise::FrameworkOptions {
-                commands: vec![logic::run(), lb(), lb_no_vds(), ping(), help(), search::search(), search::file(), render(), render_file(), render_message()],
+                commands: vec![logic::run(), lb(), bust_ghosts(), lb_no_vds(), ping(), help(), search::search(), search::file(), render(), render_file(), render_message()],
                 event_handler: |c, e, _, d| {
                     Box::pin(async move {
                         match e {
@@ -373,7 +373,7 @@ impl Bot {
                                         }
                                         if let Some(dir) = dir {
                                             // add :)
-                                            ownership::insert(m.id.get(), (m.author.name.clone(), m.author.id.get())).await;
+                                            ownership::insert(new_message.id.get(), (m.author.name.clone(), m.author.id.get())).await;
                                             send(c,|x| x
                                                 .avatar_url(new_message.author.avatar_url().unwrap_or(CAT.to_string()))
                                                 .username(&who)
@@ -482,7 +482,7 @@ impl Bot {
             .setup(|ctx, _ready, _| {
                 Box::pin(async move {
                     poise::builtins::register_globally(ctx, &[logic::run(), help(), ping(), render(), render_file(), render_message()]).await?;
-                    poise::builtins::register_in_guild(ctx, &[search::search(), lb(), lb_no_vds(), search::file()], 925674713429184564.into()).await?;
+                    poise::builtins::register_in_guild(ctx, &[search::search(), bust_ghosts(), lb(), lb_no_vds(), search::file()], 925674713429184564.into()).await?;
                     println!("registered");
                     let tracker = Arc::new(DashMap::new());
                     let tc = Arc::clone(&tracker);
@@ -513,32 +513,35 @@ impl Bot {
     }
 }
 
+pub async fn missing() -> impl Iterator<Item = (MessageId, ChannelId)> {
+    let lock = ownership::MAP.lock().await;
+    search::files()
+        .map(move |(x, ch)| {
+            let f = search::flake(x.file_name().unwrap().to_str().unwrap());
+            (lock.contains_key(&f), f, ch)
+        })
+        .filter_map(|(x, m, c)| (!x).then(|| (m.into(), c.into())))
+}
+
 #[poise::command(slash_command)]
-pub async fn own(c: Context<'_>) -> Result<()> {
-    let h = c.reply(emoji::named::LOCK_OPEN).await?;
-    let mut n = 0;
-    let mut map = HashMap::<u64, (String, u64)>::new();
-    for &id in SPECIAL.keys() {
-        let ch = c.guild().unwrap().channels[&id.into()].clone();
-        let Some(i) = search::dir(id.into()) else {
-            continue;
-        };
-        for f in i {
-            let f = search::flake(f.file_name().unwrap().to_str().unwrap());
-            let User { id, name, .. } = ch.message(c, f).await?.author;
-            map.insert(f, (name, id.get()));
-            n += 1;
-            if n % 10 == 0 {
-                h.edit(
-                    c,
-                    poise::CreateReply::default()
-                        .content(format!("{}: {n}", emoji::named::LOCK_OPEN)),
-                )
-                .await?;
-            }
-        }
+pub async fn bust_ghosts(c: Context<'_>) -> Result<()> {
+    if c.author().id != OWNER {
+        poise::say_reply(c, "access denied. this incident will be reported").await?;
+        return Ok(());
     }
-    std::fs::write("repo/ownership.json", serde_json::to_string(&map).unwrap()).unwrap();
+    let h = c.reply(emoji::named::LOCK_OPEN).await?;
+    for (m, ch) in missing().await.collect::<Vec<_>>() {
+        let ch = c.guild().unwrap().channels[&ch].clone();
+        let User { id, name, .. } = match ch.message(c, m).await {
+            Ok(x) => x.author,
+            Err(_) => {
+                // removes ghosts
+                std::fs::remove_file(git::path(&SPECIAL[&ch.id.get()].d, m)).unwrap();
+                continue;
+            }
+        };
+        ownership::insert(m.into(), (name, id.get())).await;
+    }
     h.edit(c, poise::CreateReply::default().content(emoji::named::LOCK))
         .await?;
     Ok(())
@@ -610,6 +613,7 @@ const VDS: &[u64] = &[
 pub async fn leaderboard(c: Context<'_>, channel: Option<ChannelId>, vds: bool) -> Result<()> {
     use emoji::named::*;
     c.defer().await?;
+    let lock = ownership::MAP.lock().await;
     let process = |map: HashMap<u64, u16>| {
         let mut v = map.into_iter().collect::<Vec<_>>();
         v.sort_by_key(|(_, x)| *x);
@@ -632,12 +636,7 @@ pub async fn leaderboard(c: Context<'_>, channel: Option<ChannelId>, vds: bool) 
             let mut map = HashMap::new();
             search::dir(ch.get())
                 .unwrap()
-                .map(|y| {
-                    pollster::block_on(ownership::get(
-                        search::flake(y.file_name().unwrap().to_str().unwrap()).into(),
-                    ))
-                    .1
-                })
+                .map(|y| lock[&search::flake(y.file_name().unwrap().to_str().unwrap()).into()].1)
                 .filter(|x| vds || !VDS.contains(x))
                 .for_each(|x| *map.entry(x).or_default() += 1);
             poise::say_reply(
@@ -657,10 +656,7 @@ pub async fn leaderboard(c: Context<'_>, channel: Option<ChannelId>, vds: bool) 
             let mut map = std::collections::HashMap::new();
             search::files()
                 .map(|(y, _)| {
-                    pollster::block_on(ownership::get(
-                        search::flake(y.file_name().unwrap().to_str().unwrap()).into(),
-                    ))
-                    .1
+                    lock[&search::flake(y.file_name().unwrap().to_str().unwrap()).into()].1
                 })
                 .filter(|x| vds || !VDS.contains(x))
                 .for_each(|x| *map.entry(x).or_default() += 1);
