@@ -121,13 +121,13 @@ impl Server {
                 get(|Path(file): Path<String>| async move {
                     (
                         StatusCode::OK,
-                        crate::bot::git::whos(
+                        crate::bot::ownership::whos(
                             match u64::from_str_radix(file.trim_end_matches(".msch"), 16) {
                                 Ok(x) => x,
                                 Err(_) => return (StatusCode::NOT_FOUND, "".into()),
-                            }
-                            .into(),
-                        ),
+                            },
+                        )
+                        .await,
                     )
                 }),
             )

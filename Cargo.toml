@@ -52,6 +52,7 @@ serde = "1.0.204"
 atools = "0.1.5"
 # edg = { path = "../edg" }
 httpdate = "1.0.3"
+pollster = "0.3.0"
 
 
 [profile.release]

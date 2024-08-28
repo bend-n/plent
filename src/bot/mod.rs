@@ -1,6 +1,6 @@
 mod logic;
 mod map;
-mod ownership;
+pub mod ownership;
 mod schematic;
 pub mod search;
 
@@ -154,7 +154,7 @@ pub async fn scour(c: Context<'_>, ch: ChannelId) -> Result<()> {
         if let Ok(Some(mut x)) = schematic::from((&msg.content, &msg.attachments)).await {
             x.schem.tags.insert("labels".into(), tags);
             let who = msg.author_nick(c).await.unwrap_or(msg.author.name.clone());
-            ownership::insert(msg.id.get(), (msg.author.name.clone(), msg.author.id.get()));
+            ownership::insert(msg.id.get(), (msg.author.name.clone(), msg.author.id.get())).await;
             git::write(d, msg.id, x);
             git::commit(&who, &format!("add {:x}.msch", msg.id.get()));
             msg.react(c, emojis::get!(MERGE)).await?;
@@ -223,10 +223,6 @@ pub mod git {
 
     pub fn has(dir: &str, x: MessageId) -> bool {
         path(dir, x).exists()
-    }
-
-    pub fn whos(x: MessageId) -> String {
-        ownership::get(x.get()).0
     }
 
     pub fn remove(dir: &str, x: MessageId) {
@@ -309,7 +305,7 @@ impl Bot {
                                 let m = c.http().get_message(*channel_id,* message_id).await?;
                                 if let Ok(s) = git::schem(dir,*message_id) {
                                     let who = nick.as_deref().unwrap_or(&user.name);
-                                    let own = git::whos(*message_id);
+                                    let own = ownership::erase(message_id.get()).await.unwrap();
                                     git::remove(dir, *message_id);
                                     git::commit(who, &format!("remove {:x}.msch", message_id.get()));
                                     git::push();
@@ -322,7 +318,6 @@ impl Bot {
                                         .embed(CreateEmbed::new().color(RM)
                                             .description(format!("https://discord.com/channels/925674713429184564/{channel_id}/{message_id} {} {} (added by {own}) (`{:x}`)", emojis::get!(DENY), emoji::mindustry::to_discord(&strip_colors(s.tags.get("name").unwrap())), message_id.get())))
                                     ).await;
-                                    ownership::erase(message_id.get());
                                 };
                             }
                             FullEvent::GuildCreate { guild ,..} => {
@@ -378,7 +373,7 @@ impl Bot {
                                         }
                                         if let Some(dir) = dir {
                                             // add :)
-                                            ownership::insert(m.id.get(), (m.author.name.clone(), m.author.id.get()));
+                                            ownership::insert(m.id.get(), (m.author.name.clone(), m.author.id.get())).await;
                                             send(c,|x| x
                                                 .avatar_url(new_message.author.avatar_url().unwrap_or(CAT.to_string()))
                                                 .username(&who)
@@ -451,8 +446,7 @@ impl Bot {
                             } => {
                                 if let Some(Ch{ d:dir,..}) = SPECIAL.get(&channel_id.get()) {
                                     if let Ok(s) = git::schem(dir, *deleted_message_id) {
-                                        ownership::erase(deleted_message_id.get());
-                                        let own = git::whos(*deleted_message_id);
+                                        let own = ownership::erase(deleted_message_id.get()).await.unwrap();
                                         git::remove(dir, *deleted_message_id);
                                         git::commit("plent", &format!("remove {:x}", deleted_message_id.get()));
                                         git::push();
@@ -639,7 +633,10 @@ pub async fn leaderboard(c: Context<'_>, channel: Option<ChannelId>, vds: bool) 
             search::dir(ch.get())
                 .unwrap()
                 .map(|y| {
-                    ownership::get(search::flake(y.file_name().unwrap().to_str().unwrap()).into()).1
+                    pollster::block_on(ownership::get(
+                        search::flake(y.file_name().unwrap().to_str().unwrap()).into(),
+                    ))
+                    .1
                 })
                 .filter(|x| vds || !VDS.contains(x))
                 .for_each(|x| *map.entry(x).or_default() += 1);
@@ -660,7 +657,10 @@ pub async fn leaderboard(c: Context<'_>, channel: Option<ChannelId>, vds: bool) 
             let mut map = std::collections::HashMap::new();
             search::files()
                 .map(|(y, _)| {
-                    ownership::get(search::flake(y.file_name().unwrap().to_str().unwrap()).into()).1
+                    pollster::block_on(ownership::get(
+                        search::flake(y.file_name().unwrap().to_str().unwrap()).into(),
+                    ))
+                    .1
                 })
                 .filter(|x| vds || !VDS.contains(x))
                 .for_each(|x| *map.entry(x).or_default() += 1);
