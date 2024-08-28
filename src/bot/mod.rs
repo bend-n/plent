@@ -308,7 +308,6 @@ impl Bot {
                             FullEvent::ReactionAdd { add_reaction: Reaction { message_id, emoji: ReactionType::Custom {  id,.. } ,channel_id,member: Some(Member{roles,nick,user,..}),..}} if *id == 1192388789952319499 && let Some(Ch {d:dir,..}) = SPECIAL.get(&channel_id.get()) && roles.contains(&RoleId::new(925676016708489227)) => {
                                 let m = c.http().get_message(*channel_id,* message_id).await?;
                                 if let Ok(s) = git::schem(dir,*message_id) {
-                                    ownership::erase(message_id.get());
                                     let who = nick.as_deref().unwrap_or(&user.name);
                                     let own = git::whos(*message_id);
                                     git::remove(dir, *message_id);
@@ -323,6 +322,7 @@ impl Bot {
                                         .embed(CreateEmbed::new().color(RM)
                                             .description(format!("https://discord.com/channels/925674713429184564/{channel_id}/{message_id} {} {} (added by {own}) (`{:x}`)", emojis::get!(DENY), emoji::mindustry::to_discord(&strip_colors(s.tags.get("name").unwrap())), message_id.get())))
                                     ).await;
+                                    ownership::erase(message_id.get());
                                 };
                             }
                             FullEvent::GuildCreate { guild ,..} => {
