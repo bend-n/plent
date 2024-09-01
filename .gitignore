@@ -3,3 +3,5 @@ token
 Cargo.lock
 repo
 html
+*.auth
+repos/

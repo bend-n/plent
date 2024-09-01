@@ -1,6 +1,7 @@
 mod logic;
 mod map;
 pub mod ownership;
+mod repos;
 mod schematic;
 pub mod search;
 
@@ -9,15 +10,39 @@ use dashmap::DashMap;
 use mindus::data::DataWrite;
 use mindus::Serializable;
 use poise::{serenity_prelude::*, CreateReply};
+use repos::{Repo, REPOS, SPECIAL, THREADED};
 use serenity::futures::StreamExt;
 use std::collections::{HashMap, HashSet};
 use std::fmt::Write;
 use std::fs::read_to_string;
 use std::ops::ControlFlow;
 use std::path::Path;
+use std::process::Stdio;
 use std::sync::{Arc, LazyLock, OnceLock};
 use std::time::{Duration, Instant};
 use tokio::sync::Mutex;
+
+fn clone() {
+    for (k, repos::Repo { auth, .. }) in repos::REPOS.entries() {
+        if !Path::new(&format!("repos/{k:x}")).exists() {
+            assert_eq!(
+                std::process::Command::new("git")
+                    .current_dir("repos")
+                    .arg("clone")
+                    .args(["--depth", "5"])
+                    .arg(auth)
+                    .arg(format!("{k:x}"))
+                    .stdout(Stdio::inherit())
+                    .stderr(Stdio::inherit())
+                    .status()
+                    .unwrap()
+                    .code()
+                    .unwrap(),
+                0
+            );
+        }
+    }
+}
 
 #[derive(Debug)]
 pub struct Data {
@@ -44,16 +69,6 @@ const SUCCESS: (u8, u8, u8) = (34, 139, 34);
 
 const PFX: char = '}';
 
-macro_rules! decl {
-    ($($ch:literal $( => $item:literal : [$($labels: expr),* $(,)?])?),+ $(,)?) => {
-        use emoji::to_mindustry::named::*;
-        const THREADED: phf::Set<u64> = phf::phf_set! { $($ch,)+ };
-        const SPECIAL: phf::Map<u64, Ch> = phf::phf_map! {
-            $($($ch => Ch { d: $item, labels: &[$($labels,)+] })?),+
-        };
-    };
-}
-
 fn tags(t: &[&str]) -> String {
     if let [x, rest @ ..] = t {
         let mut s = format!("[\"{x}\"");
@@ -67,101 +82,56 @@ fn tags(t: &[&str]) -> String {
     }
 }
 
-decl! {
-    925721957209636914u64 => "cryofluid" : [CRYOFLUID, CRYOFLUID_MIXER],
-    925721791475904533u64 => "graphite" : [GRAPHITE, GRAPHITE_PRESS],
-    925721824556359720u64 => "metaglass" : [METAGLASS, KILN],
-    925721863525646356u64 => "phase-fabric" : [PHASE_FABRIC, PHASE_WEAVER],
-    927036346869104693u64 => "plastanium" : [PLASTANIUM, PLASTANIUM_COMPRESSOR],
-    925736419983515688u64 => "pyratite" : [PYRATITE, PYRATITE_MIXER],
-    925736573037838397u64 => "blast-compound" : [BLAST_COMPOUND, BLAST_MIXER],
-    927793648417009676u64 => "scrap" : [DISASSEMBLER, SCRAP],
-    1198556531281637506u64 => "spore-press" : [OIL, SPORE_PRESS],
-    1200308146460180520u64 => "oil-extractor" : [OIL, OIL_EXTRACTOR],
-    1200301847387316317u64 => "rtg-gen" : [POWER, RTG_GENERATOR],
-    1200308292744921088u64 => "cultivator" : [SPORE_POD, CULTIVATOR],
-    1200305956689547324u64 => "graphite-multipress" : [GRAPHITE, MULTI_PRESS],
-    1200306409036857384u64 => "silicon-crucible" : [SILICON, SILICON_CRUCIBLE],
-    1198555991667646464u64 => "coal" : [COAL, COAL_CENTRIFUGE],
-    925721763856404520u64 => "silicon" : [SILICON, SILICON_SMELTER],
-    925721930814869524u64 => "surge-alloy" : [SURGE_ALLOY, SURGE_SMELTER],
-    1141034314163826879u64 => "defensive-outpost" : [""],
-    949529149800865862u64 => "drills" : [PRODUCTION],
-    925729855574794311u64 => "logic-schems" : [MICRO_PROCESSOR],
-    1185702384194818048u64 => "miscellaneous" : ["…"],
-    1018541701431836803u64 => "combustion-gen" : [POWER, COMBUSTION_GENERATOR],
-    927480650859184171u64 => "differential-gen" : [POWER, DIFFERENTIAL_GENERATOR],
-    925719985987403776u64 => "impact-reactor" : [POWER, IMPACT_REACTOR],
-    949740875817287771u64 => "steam-gen" : [POWER, STEAM_GENERATOR],
-    926163105694752811u64 => "thorium-reactor" : [POWER, THORIUM_REACTOR],
-    973234467357458463u64 => "carbide" : [CARBIDE, ""],
-    1198527267933007893u64 => "erekir-defensive-outpost" : [""],
-    973236445567410186u64 => "fissile-matter" : [FISSILE_MATTER, ""],
-    1147887958351945738u64 => "electrolyzer" : [HYDROGEN, OZONE, ""],
-    1202001032503365673u64 => "nitrogen" : [NITROGEN, ""],
-    1202001055349477426u64 => "cyanogen" : [CYANOGEN, ""],
-    1096157669112418454u64 => "mass-driver" : ["…", PLANET],
-    973234248054104115u64 => "oxide" : [OXIDE, ""],
-    973422874734002216u64 => "erekir-phase" : [PHASE_FABRIC, ""],
-    973369188800413787u64 => "ccc" : ["", POWER],
-    1218453338396430406u64 => "neoplasia-reactor": ["", POWER],
-    1218453292045172817u64 => "flux-reactor": ["", POWER],
-    1218452986788053012u64 => "pyrolisis-gen": ["", POWER],
-    1147722735305367572u64 => "silicon-arc" : [SILICON, ""],
-    974450769967341568u64 => "erekir-surge" : [SURGE_ALLOY, ""],
-    973241041685737532u64 => "erekir-units" : ["[#ff9266][]"],
-    1158818171139133490u64 => "unit-core" : [UNITS, CORE_NUCLEUS],
-    1158818324210274365u64 => "unit-delivery" : [UNITS, FLARE],
-    1158818598568075365u64 => "unit-raw" : [UNITS, PRODUCTION],
-    1142181013779398676u64 => "unit-sand" : [UNITS, SAND],
-    1222270513045438464u64 => "bore": [PRODUCTION],
-    1226407271978766356u64 => "pulveriser": [PULVERIZER, SAND],
-    1277138620863742003u64 => "melter": [MELTER, SLAG],
-    1277138532355543070u64 => "separator": [SEPARATOR, SCRAP],
-
-    1129391545418797147u64,
-}
-
 #[derive(Copy, Clone, Debug)]
-struct Ch {
+pub struct Ch {
+    repo: u64,
     d: &'static str,
     labels: &'static [&'static str],
 }
 
-fn sep(x: Option<&Ch>) -> (Option<&'static str>, Option<String>) {
-    (x.map(|x| x.d), x.map(|x| tags(x.labels)))
+fn sep(x: Option<&Ch>) -> (Option<&'static str>, Option<String>, Option<&Repo>) {
+    (
+        x.map(|x| x.d),
+        x.map(|x| tags(x.labels)),
+        x.map(|x| &REPOS[&x.repo]),
+    )
 }
 
 const OWNER: u64 = 696196765564534825;
 #[poise::command(slash_command)]
-pub async fn scour(c: Context<'_>, ch: ChannelId) -> Result<()> {
-    if c.author().id != OWNER {
-        poise::say_reply(c, "access denied. this incident will be reported").await?;
-        return Ok(());
-    }
+/// This command reads all messages to find the schems.
+/// This command will possibly add denied schems.
+pub async fn scour(
+    c: Context<'_>,
+    #[description = "the channel in question"] ch: ChannelId,
+) -> Result<()> {
+    let g = c.guild_id().unwrap();
+    let repo = repos::chief!(c);
     let mut n = 0;
     let d = SPECIAL[&ch.get()].d;
     let h = c.say(format!("scouring {d}...")).await?;
-    _ = std::fs::create_dir(format!("repo/{d}"));
+    _ = std::fs::create_dir(format!("repos/{:x}/{d}", repo.id));
     let mut msgs = ch.messages_iter(c).boxed();
     while let Some(msg) = msgs.next().await {
         let Ok(msg) = msg else {
             continue;
         };
-        let (_, Some(tags)) = sep(SPECIAL.get(&ch.get())) else {
+        let (_, Some(tags), _) = sep(SPECIAL.get(&ch.get())) else {
             unreachable!()
         };
         if let Ok(Some(mut x)) = schematic::from((&msg.content, &msg.attachments)).await {
             x.schem.tags.insert("labels".into(), tags);
             let who = msg.author_nick(c).await.unwrap_or(msg.author.name.clone());
-            ownership::insert(msg.id.get(), (msg.author.name.clone(), msg.author.id.get())).await;
-            git::write(d, msg.id, x);
-            git::commit(&who, &format!("add {:x}.msch", msg.id.get()));
+            ownership::get(g)
+                .await
+                .insert(msg.id.get(), (msg.author.name.clone(), msg.author.id.get()));
+            repo.write(d, msg.id, x);
+            repo.commit(&who, &format!("add {:x}.msch", msg.id.get()));
             msg.react(c, emojis::get!(MERGE)).await?;
             n += 1;
         }
     }
-    git::push();
+    repo.push();
     h.edit(
         c,
         poise::CreateReply::default().content(format!(
@@ -200,98 +170,97 @@ where
     }
 }
 
-pub mod git {
-    use mindus::data::DataWrite;
-
-    use self::schematic::Schem;
-
-    use super::*;
-    pub fn schem(dir: &str, x: MessageId) -> std::io::Result<mindus::Schematic> {
-        std::fs::read(path(dir, x))
-            .map(|x| mindus::Schematic::deserialize(&mut mindus::data::DataRead::new(&x)).unwrap())
-    }
-
-    pub fn path(dir: &str, x: MessageId) -> std::path::PathBuf {
-        Path::new("repo")
-            .join(dir)
-            .join(format!("{:x}.msch", x.get()))
-    }
-
-    pub fn gpath(dir: &str, x: MessageId) -> std::path::PathBuf {
-        Path::new(dir).join(format!("{:x}.msch", x.get()))
-    }
-
-    pub fn has(dir: &str, x: MessageId) -> bool {
-        path(dir, x).exists()
-    }
-
-    pub fn remove(dir: &str, x: MessageId) {
-        assert!(std::process::Command::new("git")
-            .current_dir("repo")
-            .arg("rm")
-            .arg("-q")
-            .arg(gpath(dir, x))
-            .status()
-            .unwrap()
-            .success());
-    }
-
-    pub fn commit(by: &str, msg: &str) {
-        assert!(std::process::Command::new("git")
-            .current_dir("repo")
-            .args(["commit", "-q", "--author"])
-            .arg(format!("{by} <@designit>",))
-            .arg("-m")
-            .arg(msg)
-            .status()
-            .unwrap()
-            .success());
-    }
-
-    pub fn push() {
-        assert!(std::process::Command::new("git")
-            .current_dir("repo")
-            .arg("push")
-            .arg("-q")
-            .status()
-            .unwrap()
-            .success())
-    }
-
-    pub fn write(dir: &str, x: MessageId, s: Schem) {
-        _ = std::fs::create_dir(format!("repo/{dir}"));
-        let mut v = DataWrite::default();
-        s.serialize(&mut v).unwrap();
-        std::fs::write(path(dir, x), v.consume()).unwrap();
-        add();
-    }
-
-    pub fn add() {
-        assert!(std::process::Command::new("git")
-            .current_dir("repo")
-            .arg("add")
-            .arg(".")
-            .status()
-            .unwrap()
-            .success());
-    }
-}
-
 const RM: (u8, u8, u8) = (242, 121, 131);
 const AD: (u8, u8, u8) = (128, 191, 255);
 const CAT: &str =
     "https://cdn.discordapp.com/avatars/696196765564534825/6f3c605329ffb5cfb790343f59ed355d.webp";
 
+async fn handle_message(
+    c: &poise::serenity_prelude::Context,
+    new_message: &Message,
+    d: &Data,
+) -> Result<()> {
+    let who = new_message
+        .author_nick(c)
+        .await
+        .unwrap_or(new_message.author.name.clone());
+    let (dir, l, repo) = sep(SPECIAL.get(&new_message.channel_id.get()));
+    let m = Msg {
+        author: who.clone(),
+        avatar: new_message.author.avatar_url().unwrap_or(CAT.to_string()),
+        attachments: new_message.attachments.clone(),
+        content: new_message.content.clone(),
+        channel: new_message.channel_id,
+    };
+    let x = schematic::with(m, c, l).await?;
+    match x {
+        ControlFlow::Continue(())
+            if THREADED.contains(&new_message.channel_id.get())
+                || SPECIAL.contains_key(&new_message.channel_id.get()) =>
+        {
+            new_message.delete(c).await?;
+            return Ok(());
+        }
+        ControlFlow::Break((m, n, s)) => {
+            if THREADED.contains(&m.channel_id.get()) {
+                m.channel_id
+                    .create_thread_from_message(
+                        c,
+                        m.id,
+                        CreateThread::new(n)
+                            .audit_log_reason("because yes")
+                            .auto_archive_duration(AutoArchiveDuration::OneDay),
+                    )
+                    .await
+                    .unwrap();
+            }
+            if let Some(dir) = dir
+                && let Some(repo) = repo
+            {
+                println!("adding {dir}");
+                // add :)
+                repo.own().await.insert(
+                    new_message.id.get(),
+                    (m.author.name.clone(), m.author.id.get()),
+                );
+                use emoji::named::*;
+                if repo.id == 925674713429184564 && !cfg!(debug_assertions) {   
+                send(c,|x| x
+                    .avatar_url(new_message.author.avatar_url().unwrap_or(CAT.to_string()))
+                    .username(&who)
+                    .embed(CreateEmbed::new().color(AD)
+                        .description(format!("https://discord.com/channels/925674713429184564/{}/{} {ADD} add {} (`{:x}.msch`)", m.channel_id,m.id, emoji::mindustry::to_discord(&strip_colors(s.tags.get("name").unwrap())), new_message.id.get())))
+                ).await;
+            }
+                repo.write(dir, new_message.id, s);
+                repo.add();
+                repo.commit(&who, &format!("add {:x}.msch", new_message.id.get()));
+                repo.push();
+                new_message.react(c, emojis::get!(MERGE)).await?;
+            }
+            d.tracker.insert(new_message.id, m);
+            return Ok(());
+        }
+        _ => (),
+    };
+
+    // not tracked, as you cant add a attachment afterwwards.
+    map::with(new_message, c).await?;
+    Ok(())
+}
+
 pub struct Bot;
 impl Bot {
     pub async fn spawn() {
         use emoji::named::*;
+        println!("check clones");
+        clone();
         println!("bot startup");
         let tok =
             std::env::var("TOKEN").unwrap_or_else(|_| read_to_string("token").expect("wher token"));
         let f = poise::Framework::builder()
             .options(poise::FrameworkOptions {
-                commands: vec![logic::run(), lb(), bust_ghosts(), lb_no_vds(), ping(), help(), search::search(), search::file(), render(), render_file(), render_message()],
+                commands: vec![logic::run(), lb(), schembrowser_instructions(), lb_no_vds(), ping(), help(), scour(), search::search(), search::file(), render(), render_file(), render_message()],
                 event_handler: |c, e, _, d| {
                     Box::pin(async move {
                         match e {
@@ -301,23 +270,32 @@ impl Bot {
                                 hookup(c.http()).await;
                             }
                             // :deny:, @vd
-                            FullEvent::ReactionAdd { add_reaction: Reaction { message_id, emoji: ReactionType::Custom {  id,.. } ,channel_id,member: Some(Member{roles,nick,user,..}),..}} if *id == 1192388789952319499 && let Some(Ch {d:dir,..}) = SPECIAL.get(&channel_id.get()) && roles.contains(&RoleId::new(925676016708489227)) => {
+                            FullEvent::ReactionAdd {
+                                add_reaction: Reaction { message_id, guild_id: Some(guild_id), emoji: ReactionType::Custom {  id,.. } ,channel_id,member: Some( m @ Member{ nick,user,..}),..}}    
+                            if let Some(git) = REPOS.get(&guild_id.get())
+                                && *id == git.deny_emoji
+                                && git.auth(m)
+                                && let Some(Ch {d:dir,..}) = SPECIAL.get(&channel_id.get())
+                            => {
                                 let m = c.http().get_message(*channel_id,* message_id).await?;
-                                if let Ok(s) = git::schem(dir,*message_id) {
+                                if let Some(git) = REPOS.get(&guild_id.get()) && let Ok(s) = git.schem(dir,*message_id) {
                                     let who = nick.as_deref().unwrap_or(&user.name);
-                                    let own = ownership::erase(message_id.get()).await.unwrap();
-                                    git::remove(dir, *message_id);
-                                    git::commit(who, &format!("remove {:x}.msch", message_id.get()));
-                                    git::push();
+                                    let own = ownership::get(*guild_id).await.erase(*message_id).unwrap();
+                                    git.remove(dir, *message_id);
+                                    git.commit(who, &format!("remove {:x}.msch", message_id.get()));
+                                    git.push();
                                     _ = m.delete_reaction(c,Some(1174262682573082644.into()), emojis::get!(MERGE)).await;
                                     _ = m.delete_reaction(c,Some(1174262682573082644.into()), ReactionType::Custom { animated: false, id: 1192316518395039864.into(), name: Some("merge".into()) }).await.unwrap();
                                     m.react(c,emojis::get!(DENY)).await?;
+                                    // only design-it has a webhook (possibly subject to future change)
+                                    if *guild_id == 925674713429184564 && !cfg!(debug_assertions) {
                                     send(c,|x| x
                                         .avatar_url(user.avatar_url().unwrap_or(CAT.to_string()))
                                         .username(who)
                                         .embed(CreateEmbed::new().color(RM)
                                             .description(format!("https://discord.com/channels/925674713429184564/{channel_id}/{message_id} {} {} (added by {own}) (`{:x}`)", emojis::get!(DENY), emoji::mindustry::to_discord(&strip_colors(s.tags.get("name").unwrap())), message_id.get())))
                                     ).await;
+                                }
                                 };
                             }
                             FullEvent::GuildCreate { guild ,..} => {
@@ -344,56 +322,12 @@ impl Bot {
                             }
                             FullEvent::Message { new_message } => {
                                 if new_message.content.starts_with('!')
-                                    || new_message.content.starts_with(PFX)
-                                    || new_message.author.bot
+                                || new_message.content.starts_with(PFX)
+                                || new_message.author.bot
                                 {
                                     return Ok(());
                                 }
-                                let who = new_message
-                                .author_nick(c)
-                                .await
-                                .unwrap_or(new_message.author.name.clone());
-                                let m = Msg {
-                                    author: who.clone(),
-                                    avatar: new_message. author.avatar_url().unwrap_or(CAT.to_string()),
-                                    attachments: new_message.attachments.clone(),
-                                    content: new_message.content.clone(),
-                                    channel: new_message.channel_id,
-                                };
-                                let (dir, l) = sep(SPECIAL.get(&new_message.channel_id.get()));
-                                let x = schematic::with(m, c, l).await?;
-                                match x {
-                                    ControlFlow::Continue(()) if THREADED.contains(&new_message.channel_id.get()) => {
-                                        new_message.delete(c).await?;
-                                        return Ok(());
-                                    },
-                                    ControlFlow::Break((m, n, s)) => {
-                                        if THREADED.contains(&m.channel_id.get()) {
-                                            m.channel_id.create_thread_from_message(c, m.id,CreateThread::new(n).audit_log_reason("because yes").auto_archive_duration(AutoArchiveDuration::OneDay)).await.unwrap();
-                                        }
-                                        if let Some(dir) = dir {
-                                            // add :)
-                                            ownership::insert(new_message.id.get(), (m.author.name.clone(), m.author.id.get())).await;
-                                            send(c,|x| x
-                                                .avatar_url(new_message.author.avatar_url().unwrap_or(CAT.to_string()))
-                                                .username(&who)
-                                                .embed(CreateEmbed::new().color(AD)
-                                                    .description(format!("https://discord.com/channels/925674713429184564/{}/{} {ADD} add {} (`{:x}.msch`)", m.channel_id,m.id, emoji::mindustry::to_discord(&strip_colors(s.tags.get("name").unwrap())), new_message.id.get())))
-                                            ).await;
-                                            git::write(dir, new_message.id, s);
-                                            git::add();
-                                            git::commit(&who, &format!("add {:x}.msch", new_message.id.get()));
-                                            git::push();
-                                            new_message.react(c, emojis::get!(MERGE)).await?;
-                                        }
-                                        d.tracker.insert(new_message.id, m);
-                                        return Ok(());
-                                    },
-                                    _ => (),
-                                };
-
-                                // not tracked, as you cant add a attachment afterwwards.
-                                map::with(new_message, c).await?;
+                                handle_message(c, new_message, d).await?;
                             }
                             FullEvent::MessageUpdate {event: MessageUpdateEvent {
                                 author: Some(author),
@@ -411,7 +345,7 @@ impl Bot {
                                     .nick_in(c, guild_id)
                                     .await
                                     .unwrap_or(author.name.clone());
-                                    let (dir, l) = sep(SPECIAL.get(&r.channel_id.get()));
+                                    let (dir, l, repo) = sep(SPECIAL.get(&r.channel_id.get()));
                                     if let ControlFlow::Break((m,_,s)) = schematic::with(
                                         Msg {
                                             avatar: author.avatar_url().unwrap_or(CAT.to_string()),
@@ -426,17 +360,19 @@ impl Bot {
                                     .await?
                                     {
                                         d.tracker.insert(*id, m);
-                                        if let Some(dir) = dir && git::has(dir, *id) {
+                                        if let Some(dir) = dir && let Some(git) = repo && git.has(dir, *id) {
                                             // update :)
+                                            if *guild_id == 925674713429184564 && !cfg!(debug_assertions) {
                                             send(c,|x| x
                                                 .avatar_url(author.avatar_url().unwrap_or(CAT.to_string()))
                                                 .username(&who)
                                                 .embed(CreateEmbed::new().color(AD)
                                                     .description(format!("https://discord.com/channels/925674713429184564/{channel_id}/{id} {ROTATE} update {} (`{:x}.msch`)", emoji::mindustry::to_discord(&strip_colors(s.tags.get("name").unwrap())), id.get())))
                                             ).await;
-                                            git::write(dir, *id, s);
-                                            git::commit(&who,&format!("update {:x}.msch", id.get()));
-                                            git::push();
+                                        }
+                                            git.write(dir, *id, s);
+                                            git.commit(&who,&format!("update {:x}.msch", id.get()));
+                                            git.push();
                                         }
                                     }
                                 }
@@ -444,12 +380,14 @@ impl Bot {
                             FullEvent::MessageDelete {
                                 deleted_message_id, channel_id, ..
                             } => {
-                                if let Some(Ch{ d:dir,..}) = SPECIAL.get(&channel_id.get()) {
-                                    if let Ok(s) = git::schem(dir, *deleted_message_id) {
-                                        let own = ownership::erase(deleted_message_id.get()).await.unwrap();
-                                        git::remove(dir, *deleted_message_id);
-                                        git::commit("plent", &format!("remove {:x}", deleted_message_id.get()));
-                                        git::push();
+                                if let Some(&Ch{ d:dir, repo, ..}) = SPECIAL.get(&channel_id.get()) {
+                                    let git = &REPOS[&repo];
+                                    if let Ok(s) = git.schem(dir, *deleted_message_id) {
+                                        let own = git.own().await.erase(deleted_message_id.get()).unwrap();
+                                        git.remove(dir, *deleted_message_id);
+                                        git.commit("plent", &format!("remove {:x}", deleted_message_id.get()));
+                                        git.push();
+                                        if repo == 925674713429184564 && !cfg!(debug_assertions) {
                                         send(c,|x| x
                                             .username("plent")
                                             .embed(CreateEmbed::new().color(RM)
@@ -457,6 +395,7 @@ impl Bot {
                                                 .footer(CreateEmbedFooter::new("message was deleted.")
                                             ))
                                         ).await;
+                                    }
                                     };
                                 }
 
@@ -481,8 +420,9 @@ impl Bot {
             })
             .setup(|ctx, _ready, _| {
                 Box::pin(async move {
-                    poise::builtins::register_globally(ctx, &[logic::run(), help(), ping(), render(), render_file(), render_message()]).await?;
-                    poise::builtins::register_in_guild(ctx, &[search::search(), bust_ghosts(), lb(), lb_no_vds(), search::file()], 925674713429184564.into()).await?;
+                    poise::builtins::register_globally(ctx, &[logic::run(), help(), ping(), render(), schembrowser_instructions(), render_file(), render_message()]).await?;
+                    poise::builtins::register_in_guild(ctx, &[scour()], 1110086242177142854.into()).await?;
+                    poise::builtins::register_in_guild(ctx, &[search::search(), lb(), lb_no_vds(), search::file()], 925674713429184564.into()).await?;
                     println!("registered");
                     let tracker = Arc::new(DashMap::new());
                     let tc = Arc::clone(&tracker);
@@ -513,39 +453,39 @@ impl Bot {
     }
 }
 
-pub async fn missing() -> impl Iterator<Item = (MessageId, ChannelId)> {
-    let lock = ownership::MAP.lock().await;
-    search::files()
-        .map(move |(x, ch)| {
-            let f = search::flake(x.file_name().unwrap().to_str().unwrap());
-            (lock.contains_key(&f), f, ch)
-        })
-        .filter_map(|(x, m, c)| (!x).then(|| (m.into(), c.into())))
-}
+// pub async fn missing(r: &'static Repo) -> impl Iterator<Item = (MessageId, ChannelId)> {
+//     let lock = r.own().await;
+//     search::files()
+//         .map(move |(x, ch)| {
+//             let f = search::flake(x.file_name().unwrap().to_str().unwrap());
+//             (lock.map.contains_key(&f), f, ch)
+//         })
+//         .filter_map(|(x, m, c)| (!x).then(|| (m.into(), c.into())))
+// }
 
-#[poise::command(slash_command)]
-pub async fn bust_ghosts(c: Context<'_>) -> Result<()> {
-    if c.author().id != OWNER {
-        poise::say_reply(c, "access denied. this incident will be reported").await?;
-        return Ok(());
-    }
-    let h = c.reply(emoji::named::LOCK_OPEN).await?;
-    for (m, ch) in missing().await.collect::<Vec<_>>() {
-        let ch = c.guild().unwrap().channels[&ch].clone();
-        let User { id, name, .. } = match ch.message(c, m).await {
-            Ok(x) => x.author,
-            Err(_) => {
-                // removes ghosts
-                std::fs::remove_file(git::path(&SPECIAL[&ch.id.get()].d, m)).unwrap();
-                continue;
-            }
-        };
-        ownership::insert(m.into(), (name, id.get())).await;
-    }
-    h.edit(c, poise::CreateReply::default().content(emoji::named::LOCK))
-        .await?;
-    Ok(())
-}
+// #[poise::command(slash_command)]
+// pub async fn bust_ghosts(c: Context<'_>) -> Result<()> {
+//     if c.author().id != OWNER {
+//         poise::say_reply(c, "access denied. this incident will be reported").await?;
+//         return Ok(());
+//     }
+//     let h = c.reply(emoji::named::LOCK_OPEN).await?;
+//     for (m, ch) in missing().await.collect::<Vec<_>>() {
+//         let ch = c.guild().unwrap().channels[&ch].clone();
+//         let User { id, name, .. } = match ch.message(c, m).await {
+//             Ok(x) => x.author,
+//             Err(_) => {
+//                 // removes ghosts
+//                 std::fs::remove_file(git::path(&SPECIAL[&ch.id.get()].d, m)).unwrap();
+//                 continue;
+//             }
+//         };
+//         ownership::insert(m.into(), (name, id.get())).await;
+//     }
+//     h.edit(c, poise::CreateReply::default().content(emoji::named::LOCK))
+//         .await?;
+//     Ok(())
+// }
 
 #[poise::command(slash_command)]
 pub async fn retag(c: Context<'_>, channel: ChannelId) -> Result<()> {
@@ -613,7 +553,7 @@ const VDS: &[u64] = &[
 pub async fn leaderboard(c: Context<'_>, channel: Option<ChannelId>, vds: bool) -> Result<()> {
     use emoji::named::*;
     c.defer().await?;
-    let lock = ownership::MAP.lock().await;
+    let lock = REPOS[&925674713429184564].own().await;
     let process = |map: HashMap<u64, u16>| {
         let mut v = map.into_iter().collect::<Vec<_>>();
         v.sort_by_key(|(_, x)| *x);
@@ -636,7 +576,7 @@ pub async fn leaderboard(c: Context<'_>, channel: Option<ChannelId>, vds: bool) 
             let mut map = HashMap::new();
             search::dir(ch.get())
                 .unwrap()
-                .map(|y| lock[&search::flake(y.file_name().unwrap().to_str().unwrap()).into()].1)
+                .map(|y| lock.map[&search::flake(y.file_name().unwrap().to_str().unwrap()).into()].1)
                 .filter(|x| vds || !VDS.contains(x))
                 .for_each(|x| *map.entry(x).or_default() += 1);
             poise::say_reply(
@@ -656,7 +596,7 @@ pub async fn leaderboard(c: Context<'_>, channel: Option<ChannelId>, vds: bool) 
             let mut map = std::collections::HashMap::new();
             search::files()
                 .map(|(y, _)| {
-                    lock[&search::flake(y.file_name().unwrap().to_str().unwrap()).into()].1
+                    lock.map[&search::flake(y.file_name().unwrap().to_str().unwrap()).into()].1
                 })
                 .filter(|x| vds || !VDS.contains(x))
                 .for_each(|x| *map.entry(x).or_default() += 1);
@@ -965,6 +905,23 @@ pub async fn render_message(c: Context<'_>, m: Message) -> Result<()> {
             &m.author.avatar_url().unwrap_or(CAT.to_string()),
         )
         .await?,
+    )
+    .await?;
+    Ok(())
+}
+
+#[poise::command(
+    slash_command,
+    install_context = "Guild",
+    interaction_context = "Guild|PrivateChannel"
+)]
+/// Instructions on adding a schematic repository to YOUR server!
+pub async fn schembrowser_instructions(c: Context<'_>) -> Result<()> {
+    poise::send_reply(
+        c,
+        poise::CreateReply::default()
+            .content(include_str!("repo.md"))
+            .allowed_mentions(CreateAllowedMentions::default().empty_users().empty_roles()),
     )
     .await?;
     Ok(())
