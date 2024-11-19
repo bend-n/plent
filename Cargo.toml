@@ -19,12 +19,9 @@ serenity = { version = "0.12", features = [
   "gateway",
   "model",
 ], default-features = false }
-poise = { git = "https://github.com/fgardt/poise", features = [
-  "unstable",
-], branch = "feat/user_apps" }
+poise = { git = "https://github.com/fgardt/poise", branch = "feat/user_apps" }
 anyhow = "1.0.75"
 regex = { version = "1.8.4", features = ["std"], default-features = false }
-btparse = "0.1.1"
 mindus = { version = "5.0.7", features = [], default-features = false }
 flate2 = { version = "1.0", features = [
   "cloudflare_zlib",
@@ -34,7 +31,7 @@ dashmap = "5.5.3"
 oxipng = { version = "9.0.0", default-features = false }
 fimg = "0.4.26"
 phf = { version = "0.11.2", features = ["macros"] }
-emoji = { git = "https://github.com/Apricot-Conservation-Project/emoji" }
+emojib = { git = "https://github.com/Apricot-Conservation-Project/emoji", package = "emoji" }
 rust-fuzzy-search = "0.1.1"
 jemallocator-global = "0.3.2"
 const_format = { version = "0.2.32", features = ["fmt"] }
@@ -53,7 +50,13 @@ atools = "0.1.5"
 # edg = { path = "../edg" }
 httpdate = "1.0.3"
 pollster = "0.3.0"
+btparse-stable = "0.1.2"
+cpu-monitor = "0.1.1"
 
+[build-dependencies]
+emojib = { git = "https://github.com/Apricot-Conservation-Project/emoji", features = [
+  "build",
+], package = "emoji" }
 
 [profile.release]
 strip = true
@@ -69,3 +72,4 @@ debug-assertions = false
 
 [patch.crates-io]
 serenity = { git = "https://github.com/serenity-rs/serenity" }
+mindus = { git = "https://github.com/bend-n/mindus" }

@@ -124,7 +124,7 @@ macro_rules! decl {
             ];
         )+
     ) => {
-        use emoji::to_mindustry::named::*;
+        use crate::emoji::to_mindustry::named::*;
         pub const THREADED: phf::Set<u64> = phf::phf_set! { $($threaded,)+ };
         pub const SPECIAL: phf::Map<u64, Ch> = phf::phf_map! {
             $($($ch => Ch { d: $item, labels: &[$($labels,)+], repo: $repo },)?)+
@@ -178,20 +178,20 @@ decl! {
 925721957209636914u64 => "cryofluid" : [CRYOFLUID, CRYOFLUID_MIXER],
 925721791475904533u64 => "graphite" : [GRAPHITE, GRAPHITE_PRESS],
 925721824556359720u64 => "metaglass" : [METAGLASS, KILN],
-925721863525646356u64 => "phase-fabric" : [PHASE_FABRIC, PHASE_WEAVER],
+925721863525646356u64 => "phase-fabric" : [PHASEFABRIC, PHASE_WEAVER],
 927036346869104693u64 => "plastanium" : [PLASTANIUM, PLASTANIUM_COMPRESSOR],
 925736419983515688u64 => "pyratite" : [PYRATITE, PYRATITE_MIXER],
-925736573037838397u64 => "blast-compound" : [BLAST_COMPOUND, BLAST_MIXER],
+925736573037838397u64 => "blast-compound" : [BLASTCOMPOUND, BLAST_MIXER],
 927793648417009676u64 => "scrap" : [DISASSEMBLER, SCRAP],
 1198556531281637506u64 => "spore-press" : [OIL, SPORE_PRESS],
 1200308146460180520u64 => "oil-extractor" : [OIL, OIL_EXTRACTOR],
 1200301847387316317u64 => "rtg-gen" : [POWER, RTG_GENERATOR],
-1200308292744921088u64 => "cultivator" : [SPORE_POD, CULTIVATOR],
+1200308292744921088u64 => "cultivator" : [SPOREPOD, CULTIVATOR],
 1200305956689547324u64 => "graphite-multipress" : [GRAPHITE, MULTI_PRESS],
 1200306409036857384u64 => "silicon-crucible" : [SILICON, SILICON_CRUCIBLE],
 1198555991667646464u64 => "coal" : [COAL, COAL_CENTRIFUGE],
 925721763856404520u64 => "silicon" : [SILICON, SILICON_SMELTER],
-925721930814869524u64 => "surge-alloy" : [SURGE_ALLOY, SURGE_SMELTER],
+925721930814869524u64 => "surge-alloy" : [SURGEALLOY, SURGE_SMELTER],
 1141034314163826879u64 => "defensive-outpost" : [""],
 949529149800865862u64 => "drills" : [PRODUCTION],
 925729855574794311u64 => "logic-schems" : [MICRO_PROCESSOR],
@@ -203,19 +203,19 @@ decl! {
 926163105694752811u64 => "thorium-reactor" : [POWER, THORIUM_REACTOR],
 973234467357458463u64 => "carbide" : [CARBIDE, ""],
 1198527267933007893u64 => "erekir-defensive-outpost" : [""],
-973236445567410186u64 => "fissile-matter" : [FISSILE_MATTER, ""],
+973236445567410186u64 => "fissile-matter" : [FISSILEMATTER, ""],
 1147887958351945738u64 => "electrolyzer" : [HYDROGEN, OZONE, ""],
 1202001032503365673u64 => "nitrogen" : [NITROGEN, ""],
 1202001055349477426u64 => "cyanogen" : [CYANOGEN, ""],
 1096157669112418454u64 => "mass-driver" : ["…", PLANET],
 973234248054104115u64 => "oxide" : [OXIDE, ""],
-973422874734002216u64 => "erekir-phase" : [PHASE_FABRIC, ""],
+973422874734002216u64 => "erekir-phase" : [PHASEFABRIC, ""],
 973369188800413787u64 => "ccc" : ["", POWER],
 1218453338396430406u64 => "neoplasia-reactor": ["", POWER],
 1218453292045172817u64 => "flux-reactor": ["", POWER],
 1218452986788053012u64 => "pyrolisis-gen": ["", POWER],
 1147722735305367572u64 => "silicon-arc" : [SILICON, ""],
-974450769967341568u64 => "erekir-surge" : [SURGE_ALLOY, ""],
+974450769967341568u64 => "erekir-surge" : [SURGEALLOY, ""],
 973241041685737532u64 => "erekir-units" : ["[#ff9266][]"],
 1158818171139133490u64 => "unit-core" : [UNITS, CORE_NUCLEUS],
 1158818324210274365u64 => "unit-delivery" : [UNITS, FLARE],

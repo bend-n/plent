@@ -21,7 +21,7 @@ impl Ownership {
         self.flush();
     }
     fn flush(&self) {
-        std::fs::write(&self.path, serde_json::to_string_pretty(&self.map).unwrap()).unwrap();
+        std::fs::write(self.path, serde_json::to_string_pretty(&self.map).unwrap()).unwrap();
     }
     pub fn get(&self, k: u64) -> &(String, u64) {
         self.map.get(&k).unwrap()

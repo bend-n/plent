@@ -5,6 +5,7 @@ mod repos;
 mod schematic;
 pub mod search;
 
+use crate::emoji;
 use anyhow::Result;
 use dashmap::DashMap;
 use mindus::data::DataWrite;
@@ -202,7 +203,7 @@ async fn handle_message(
             return Ok(());
         }
         ControlFlow::Break((m, n, s)) => {
-            if THREADED.contains(&m.channel_id.get()) {
+            if SPECIAL.contains_key(&m.channel_id.get()) || THREADED.contains(&m.channel_id.get()) {
                 m.channel_id
                     .create_thread_from_message(
                         c,
@@ -224,14 +225,14 @@ async fn handle_message(
                     (m.author.name.clone(), m.author.id.get()),
                 );
                 use emoji::named::*;
-                if repo.id == 925674713429184564 && !cfg!(debug_assertions) {   
-                send(c,|x| x
+                if repo.id == 925674713429184564 && !cfg!(debug_assertions) {
+                    send(c,|x| x
                     .avatar_url(new_message.author.avatar_url().unwrap_or(CAT.to_string()))
                     .username(&who)
                     .embed(CreateEmbed::new().color(AD)
                         .description(format!("https://discord.com/channels/925674713429184564/{}/{} {ADD} add {} (`{:x}.msch`)", m.channel_id,m.id, emoji::mindustry::to_discord(&strip_colors(s.tags.get("name").unwrap())), new_message.id.get())))
                 ).await;
-            }
+                }
                 repo.write(dir, new_message.id, s);
                 repo.add();
                 repo.commit(&who, &format!("add {:x}.msch", new_message.id.get()));
@@ -248,6 +249,8 @@ async fn handle_message(
     map::with(new_message, c).await?;
     Ok(())
 }
+static SEEN: LazyLock<Mutex<HashSet<(GuildId, u64, String, UserId)>>> =
+    LazyLock::new(|| Mutex::new(HashSet::new()));
 
 pub struct Bot;
 impl Bot {
@@ -260,18 +263,37 @@ impl Bot {
             std::env::var("TOKEN").unwrap_or_else(|_| read_to_string("token").expect("wher token"));
         let f = poise::Framework::builder()
             .options(poise::FrameworkOptions {
-                commands: vec![logic::run(), lb(), schembrowser_instructions(), lb_no_vds(), ping(), help(), scour(), search::search(), search::file(), render(), render_file(), render_message()],
+                commands: vec![logic::run(), lb(), logic::run_file(), schembrowser_instructions(), lb_no_vds(), ping(), help(), scour(), search::search(), search::file(), render(), render_file(), render_message()],
                 event_handler: |c, e, _, d| {
                     Box::pin(async move {
                         match e {
                             FullEvent::Ready { .. } => {
                                 println!("bot ready");
+                                // pruning
+                                // while SEEN.lock().await.len() < 5 {
+                                // tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
+                                // }
+                                // let mut x = SEEN.lock().await.clone().into_iter().collect::<Vec<_>>();
+                                // x.sort_by_key(|(_, x, _,_)|*x);
+                                // for (g, _, _ ,_ ) in x.iter().take_while(|(_, x, _,_)| *x <= 6).filter(|(_, _, _,x)| *x != OWNER) {
+                                //     g.leave(&c).await.unwrap();
+                                // };
+                                // for (i, member_count, name, _) in x {
+                                //     println!(
+                                //             "{name} has {member_count:?} members {i:?}"
+                                //         );
+                                // }
+                                SEEN.lock().await.clear();
                                 emojis::load(c.http()).await;
                                 hookup(c.http()).await;
                             }
+                            FullEvent::GuildCreate { guild , ..} => {
+                                SEEN.lock().await.insert((guild.id, guild.member_count, guild.name.clone(), guild.owner_id));
+                                // let User{id,name:owner_name,..} = c.http().get_user(*owner_id).await.unwrap();
+                            }
                             // :deny:, @vd
                             FullEvent::ReactionAdd {
-                                add_reaction: Reaction { message_id, guild_id: Some(guild_id), emoji: ReactionType::Custom {  id,.. } ,channel_id,member: Some( m @ Member{ nick,user,..}),..}}    
+                                add_reaction: Reaction { message_id, guild_id: Some(guild_id), emoji: ReactionType::Custom {  id,.. } ,channel_id,member: Some( m @ Member{ nick,user,..}),..}}
                             if let Some(git) = REPOS.get(&guild_id.get())
                                 && *id == git.deny_emoji
                                 && git.auth(m)
@@ -285,7 +307,7 @@ impl Bot {
                                     git.commit(who, &format!("remove {:x}.msch", message_id.get()));
                                     git.push();
                                     _ = m.delete_reaction(c,Some(1174262682573082644.into()), emojis::get!(MERGE)).await;
-                                    _ = m.delete_reaction(c,Some(1174262682573082644.into()), ReactionType::Custom { animated: false, id: 1192316518395039864.into(), name: Some("merge".into()) }).await.unwrap();
+                                    m.delete_reaction(c,Some(1174262682573082644.into()), ReactionType::Custom { animated: false, id: 1192316518395039864.into(), name: Some("merge".into()) }).await.unwrap();
                                     m.react(c,emojis::get!(DENY)).await?;
                                     // only design-it has a webhook (possibly subject to future change)
                                     if *guild_id == 925674713429184564 && !cfg!(debug_assertions) {
@@ -297,28 +319,6 @@ impl Bot {
                                     ).await;
                                 }
                                 };
-                            }
-                            FullEvent::GuildCreate { guild ,..} => {
-                                static SEEN: LazyLock<Mutex<HashSet<GuildId>>> =
-                                    LazyLock::new(|| Mutex::new(HashSet::new()));
-                                if SEEN.lock().await.insert(guild.id) {
-                                    let Guild {
-                                        member_count,
-                                        name,
-                                        owner_id,
-                                        ..
-                                    } = guild;
-                                    let User{id,name:owner_name,..} = c.http().get_user(*owner_id).await.unwrap();
-                                    c.http()
-                                        .get_user(696196765564534825.into())
-                                        .await
-                                        .unwrap()
-                                        .dm(c.http(),  CreateMessage::new().allowed_mentions(CreateAllowedMentions::default().empty_users()).content(format!(
-                                            "{name} (owned by <@{id}>({owner_name})) has {member_count:?} members"
-                                        )))
-                                        .await
-                                        .unwrap();
-                                }
                             }
                             FullEvent::Message { new_message } => {
                                 if new_message.content.starts_with('!')
@@ -338,7 +338,6 @@ impl Bot {
                                 channel_id,
                                 ..
                             }, ..} => {
-
                                 if let Some((_, r)) = d.tracker.remove(id) {
                                     _ = r.delete(c).await;
                                     let who = author
@@ -398,7 +397,6 @@ impl Bot {
                                     }
                                     };
                                 }
-
                                 if let Some((_, r)) = d.tracker.remove(deleted_message_id) {
                                     r.delete(c).await.unwrap();
                                 }
@@ -420,9 +418,28 @@ impl Bot {
             })
             .setup(|ctx, _ready, _| {
                 Box::pin(async move {
-                    poise::builtins::register_globally(ctx, &[logic::run(), help(), ping(), render(), schembrowser_instructions(), render_file(), render_message()]).await?;
-                    poise::builtins::register_in_guild(ctx, &[scour()], 1110086242177142854.into()).await?;
-                    poise::builtins::register_in_guild(ctx, &[search::search(), lb(), lb_no_vds(), search::file()], 925674713429184564.into()).await?;
+                    poise::builtins::register_globally(
+                        ctx,
+                        &[
+                            logic::run(),
+                            help(),
+                            ping(),
+                            render(),
+                            schembrowser_instructions(),
+                            render_file(),
+                            render_message(),
+                            logic::run_file(),
+                        ],
+                    )
+                    .await?;
+                    poise::builtins::register_in_guild(ctx, &[scour()], 1110086242177142854.into())
+                        .await?;
+                    poise::builtins::register_in_guild(
+                        ctx,
+                        &[search::search(), lb(), lb_no_vds(), search::file()],
+                        925674713429184564.into(),
+                    )
+                    .await?;
                     println!("registered");
                     let tracker = Arc::new(DashMap::new());
                     let tc = Arc::clone(&tracker);
@@ -439,7 +456,8 @@ impl Bot {
                     });
                     Ok(Data { tracker })
                 })
-            }).build();
+            })
+            .build();
         ClientBuilder::new(
             tok,
             GatewayIntents::non_privileged() | GatewayIntents::MESSAGE_CONTENT,
@@ -576,7 +594,7 @@ pub async fn leaderboard(c: Context<'_>, channel: Option<ChannelId>, vds: bool) 
             let mut map = HashMap::new();
             search::dir(ch.get())
                 .unwrap()
-                .map(|y| lock.map[&search::flake(y.file_name().unwrap().to_str().unwrap()).into()].1)
+                .map(|y| lock.map[&search::flake(y.file_name().unwrap().to_str().unwrap())].1)
                 .filter(|x| vds || !VDS.contains(x))
                 .for_each(|x| *map.entry(x).or_default() += 1);
             poise::say_reply(
@@ -595,9 +613,7 @@ pub async fn leaderboard(c: Context<'_>, channel: Option<ChannelId>, vds: bool) 
         None => {
             let mut map = std::collections::HashMap::new();
             search::files()
-                .map(|(y, _)| {
-                    lock.map[&search::flake(y.file_name().unwrap().to_str().unwrap()).into()].1
-                })
+                .map(|(y, _)| lock.map[&search::flake(y.file_name().unwrap().to_str().unwrap())].1)
                 .filter(|x| vds || !VDS.contains(x))
                 .for_each(|x| *map.entry(x).or_default() += 1);
             poise::say_reply(c, format!("## Leaderboard\n{}", process(map)))
@@ -678,9 +694,9 @@ async fn on_error(error: poise::FrameworkError<'_, Data, anyhow::Error>) {
                     }
                 }
             }
-            let bt = error.backtrace();
+            /* let bt = error.backtrace();
             if bt.status() == std::backtrace::BacktraceStatus::Captured {
-                let parsed = btparse::deserialize(dbg!(error.backtrace())).unwrap();
+                let parsed = btparse_stable::deserialize(error.backtrace()).unwrap();
                 let mut s = vec![];
                 for frame in parsed.frames {
                     if let Some(line) = frame.line
@@ -695,7 +711,7 @@ async fn on_error(error: poise::FrameworkError<'_, Data, anyhow::Error>) {
                 }
                 s.truncate(15);
                 write!(msg, "trace: ```rs\n{}\n```", s.join("\n")).unwrap();
-            }
+            } */
             ctx.say(msg).await.unwrap();
         }
         err => poise::builtins::on_error(err).await.unwrap(),
@@ -786,10 +802,17 @@ pub fn png(p: fimg::Image<Vec<u8>, 3>) -> Vec<u8> {
 pub async fn ping(c: Context<'_>) -> Result<()> {
     use emoji::named::*;
     let m = memory_stats::memory_stats().unwrap().physical_mem as f32 / (1 << 20) as f32;
+
+    let start = cpu_monitor::CpuInstant::now()?;
+    std::thread::sleep(Duration::from_millis(200));
+    let end = cpu_monitor::CpuInstant::now()?;
+    let duration = end - start;
+    let util = duration.non_idle() * 100.0;
+
     // let m = (m / 0.1) + 0.5;
     // let m = m.floor() * 0.1;
     c.reply(format!(
-        "pong!\n{DISCORD}{RIGHT}: {} — {HOST} mem used: {m:.1}MiB — <:time:1244901561688260742> uptime: {}",
+        "pong!\n{DISCORD}{RIGHT}: {} — {HOST} mem used: {m:.1}MiB - <:stopwatch:1283755550726684723> cpu utilization {util:.2}% — <:time:1244901561688260742> uptime: {}",
         humantime::format_duration(Duration::from_millis(
             Timestamp::now()
                 .signed_duration_since(*c.created_at())

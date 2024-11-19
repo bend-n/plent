@@ -1,3 +1,4 @@
+use crate::emoji;
 use anyhow::Result;
 use base64::Engine;
 use logos::Logos;
@@ -147,9 +148,9 @@ pub async fn with(
     labels: Option<String>,
 ) -> Result<ControlFlow<(Message, String, Schem), ()>> {
     if let Ok(Some(mut v)) = from((&m.content, &m.attachments)).await {
-        labels.map(|x| {
+        if let Some(x) = labels {
             v.schem.tags.insert("labels".into(), x);
-        });
+        };
         return Ok(ControlFlow::Break(send(m, c, v).await?));
     }
 
@@ -203,7 +204,7 @@ fn decode_tags(tags: &str) -> Vec<String> {
         #[regex(r"[^,\]\[]+", priority = 6)]
         String(&'s str),
     }
-    let mut lexer = Tokens::lexer(&tags);
+    let mut lexer = Tokens::lexer(tags);
     let mut t = Vec::new();
     let mut next = || lexer.find_map(|x| x.ok());
     assert_eq!(next().unwrap(), Tokens::Open);

@@ -1,4 +1,5 @@
 #![feature(let_chains)]
+// use serenity::prelude::*;
 use std::fs;
 use std::io::prelude::*;
 use std::path::Path;
@@ -31,6 +32,8 @@ fn main() -> std::io::Result<()> {
     if !Path::new("html").exists() {
         fs::create_dir("html")?;
     }
+
+    emojib::load();
 
     for path in fs::read_dir("html-src")? {
         process(path.unwrap().path().file_name().unwrap())?;

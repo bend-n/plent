@@ -1,5 +1,5 @@
+use crate::emoji::named::*;
 use anyhow::Result;
-use emoji::named::*;
 use mindus::data::DataRead;
 use mindus::{Schematic, Serializable};
 use poise::serenity_prelude::*;
@@ -130,8 +130,7 @@ pub fn files() -> impl Iterator<Item = (PathBuf, u64)> {
     super::SPECIAL
         .keys()
         .filter_map(|&ch| dir(ch).map(|x| (x, ch)))
-        .map(|(fs, channel)| fs.map(move |f| (f, channel)))
-        .flatten()
+        .flat_map(|(fs, channel)| fs.map(move |f| (f, channel)))
 }
 
 pub fn load(f: &Path) -> Schematic {
