@@ -1,5 +1,8 @@
+#![allow(incomplete_features)]
 #![feature(
     let_chains,
+    generic_const_exprs,
+    effects,
     lazy_cell_consume,
     iter_intersperse,
     if_let_guard,

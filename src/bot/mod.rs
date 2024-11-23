@@ -4,6 +4,7 @@ pub mod ownership;
 mod repos;
 mod schematic;
 pub mod search;
+mod sorter;
 
 use crate::emoji;
 use anyhow::Result;
@@ -263,7 +264,7 @@ impl Bot {
             std::env::var("TOKEN").unwrap_or_else(|_| read_to_string("token").expect("wher token"));
         let f = poise::Framework::builder()
             .options(poise::FrameworkOptions {
-                commands: vec![logic::run(), lb(), logic::run_file(), schembrowser_instructions(), lb_no_vds(), ping(), help(), scour(), search::search(), search::file(), render(), render_file(), render_message()],
+                commands: vec![logic::run(), lb(), logic::run_file(), sorter::sorter(), schembrowser_instructions(), lb_no_vds(), ping(), help(), scour(), search::search(), search::file(), render(), render_file(), render_message(), map::render_message()],
                 event_handler: |c, e, _, d| {
                     Box::pin(async move {
                         match e {
@@ -428,7 +429,9 @@ impl Bot {
                             schembrowser_instructions(),
                             render_file(),
                             render_message(),
+                            map::render_message(),
                             logic::run_file(),
+                            sorter::sorter(),
                         ],
                     )
                     .await?;
