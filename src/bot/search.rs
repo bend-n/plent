@@ -121,9 +121,13 @@ pub struct Data {
 }
 
 pub fn dir(x: u64) -> Option<impl Iterator<Item = PathBuf>> {
-    std::fs::read_dir(Path::new("repo").join(super::SPECIAL[&x].d))
-        .ok()
-        .map(|x| x.filter_map(Result::ok).map(move |f| f.path()))
+    std::fs::read_dir(
+        Path::new("repos")
+            .join("cd8a83f57821034")
+            .join(super::SPECIAL[&x].d),
+    )
+    .ok()
+    .map(|x| x.filter_map(Result::ok).map(move |f| f.path()))
 }
 
 pub fn files() -> impl Iterator<Item = (PathBuf, u64)> {

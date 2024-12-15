@@ -223,7 +223,7 @@ async fn handle_message(
                 // add :)
                 repo.own().await.insert(
                     new_message.id.get(),
-                    (m.author.name.clone(), m.author.id.get()),
+                    (new_message.author.name.clone(), new_message.author.id.get()),
                 );
                 use emoji::named::*;
                 if repo.id == 925674713429184564 && !cfg!(debug_assertions) {
