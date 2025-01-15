@@ -122,7 +122,7 @@ impl Server {
                     (
                         StatusCode::OK,
                         crate::bot::ownership::whos(
-                            925674713429184564,
+                            &crate::bot::repos::DESIGN_IT,
                             match u64::from_str_radix(file.trim_end_matches(".msch"), 16) {
                                 Ok(x) => x,
                                 Err(_) => return (StatusCode::NOT_FOUND, "".into()),
@@ -143,11 +143,9 @@ impl Server {
                     }
                 }),
             );
-        tokio::spawn(async move {
-            AxumServer::bind(&addr)
-                .serve(router.into_make_service())
-                .await
-                .unwrap();
-        });
+        AxumServer::bind(&addr)
+            .serve(router.into_make_service())
+            .await
+            .unwrap()
     }
 }

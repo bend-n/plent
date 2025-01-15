@@ -1,18 +1,18 @@
 mod logic;
 mod map;
 pub mod ownership;
-mod repos;
+pub mod repos;
 mod schematic;
 pub mod search;
 mod sorter;
+mod db;
 
 use crate::emoji;
 use anyhow::Result;
 use dashmap::DashMap;
-use mindus::data::DataWrite;
 use mindus::Serializable;
 use poise::{serenity_prelude::*, CreateReply};
-use repos::{Repo, REPOS, SPECIAL, THREADED};
+use repos::{Repo, FORUMS, SPECIAL, THREADED};
 use serenity::futures::StreamExt;
 use std::collections::{HashMap, HashSet};
 use std::fmt::Write;
@@ -24,16 +24,16 @@ use std::sync::{Arc, LazyLock, OnceLock};
 use std::time::{Duration, Instant};
 use tokio::sync::Mutex;
 
-fn clone() {
-    for (k, repos::Repo { auth, .. }) in repos::REPOS.entries() {
-        if !Path::new(&format!("repos/{k:x}")).exists() {
+pub fn clone() {
+    for repos::Repo { auth, name, .. } in repos::ALL {
+        if !Path::new(&format!("repos/{name}")).exists() {
             assert_eq!(
                 std::process::Command::new("git")
                     .current_dir("repos")
                     .arg("clone")
                     .args(["--depth", "5"])
                     .arg(auth)
-                    .arg(format!("{k:x}"))
+                    .arg(format!("{name}"))
                     .stdout(Stdio::inherit())
                     .stderr(Stdio::inherit())
                     .status()
@@ -71,7 +71,7 @@ const SUCCESS: (u8, u8, u8) = (34, 139, 34);
 
 const PFX: char = '}';
 
-fn tags(t: &[&str]) -> String {
+fn tags<T: std::fmt::Display>(t: &[T]) -> String {
     if let [x, rest @ ..] = t {
         let mut s = format!("[\"{x}\"");
         for elem in rest {
@@ -84,18 +84,28 @@ fn tags(t: &[&str]) -> String {
     }
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Clone, Debug)]
 pub struct Ch {
-    repo: u64,
+    repo: &'static Repo,
     d: &'static str,
-    labels: &'static [&'static str],
+    ty: Type,
+}
+#[derive(Clone, Debug)]
+enum Type {
+    Basic(&'static [&'static str]),
+    Assembled(String),
+    Forum(()), // &'static phf::Map<&'static str, &'static [&'static str]>
 }
 
 fn sep(x: Option<&Ch>) -> (Option<&'static str>, Option<String>, Option<&Repo>) {
     (
         x.map(|x| x.d),
-        x.map(|x| tags(x.labels)),
-        x.map(|x| &REPOS[&x.repo]),
+        x.and_then(|x| match x.ty.clone() {
+            Type::Basic(x) => Some(tags(x)),
+            Type::Forum(_) => None,
+            Type::Assembled(x) => Some(x),
+        }),
+        x.map(|x| x.repo),
     )
 }
 
@@ -107,30 +117,35 @@ pub async fn scour(
     c: Context<'_>,
     #[description = "the channel in question"] ch: ChannelId,
 ) -> Result<()> {
-    let g = c.guild_id().unwrap();
     let repo = repos::chief!(c);
     let mut n = 0;
     let d = SPECIAL[&ch.get()].d;
     let h = c.say(format!("scouring {d}...")).await?;
-    _ = std::fs::create_dir(format!("repos/{:x}/{d}", repo.id));
-    let mut msgs = ch.messages_iter(c).boxed();
-    while let Some(msg) = msgs.next().await {
-        let Ok(msg) = msg else {
-            continue;
-        };
-        let (_, Some(tags), _) = sep(SPECIAL.get(&ch.get())) else {
+    _ = std::fs::create_dir(format!("repos/{}/{d}", repo.name));
+    let Ch { d, repo, ty, .. } = SPECIAL.get(&ch.get()).unwrap();
+    match ty {
+        Type::Basic(tg) => {
+            let mut msgs = ch.messages_iter(c).boxed();
+            let tags = tags(tg);
+            while let Some(msg) = msgs.next().await {
+                let Ok(msg) = msg else {
+                    continue;
+                };
+                if let Ok(Some(mut x)) = schematic::from((&msg.content, &msg.attachments)).await {
+                    x.schem.tags.insert("labels".into(), tags.clone());
+                    let who = msg.author_nick(c).await.unwrap_or(msg.author.name.clone());
+                    ownership::get(repo)
+                        .await
+                        .insert(msg.id.get(), (msg.author.name.clone(), msg.author.id.get()));
+                    repo.write(d, msg.id, x);
+                    repo.commit(&who, &format!("add {:x}.msch", msg.id.get()));
+                    msg.react(c, emojis::get!(MERGE)).await?;
+                    n += 1;
+                }
+            }
+        }
+        _ => {
             unreachable!()
-        };
-        if let Ok(Some(mut x)) = schematic::from((&msg.content, &msg.attachments)).await {
-            x.schem.tags.insert("labels".into(), tags);
-            let who = msg.author_nick(c).await.unwrap_or(msg.author.name.clone());
-            ownership::get(g)
-                .await
-                .insert(msg.id.get(), (msg.author.name.clone(), msg.author.id.get()));
-            repo.write(d, msg.id, x);
-            repo.commit(&who, &format!("add {:x}.msch", msg.id.get()));
-            msg.react(c, emojis::get!(MERGE)).await?;
-            n += 1;
         }
     }
     repo.push();
@@ -142,6 +157,25 @@ pub async fn scour(
     )
     .await?;
     Ok(())
+}
+
+async fn del(c: &serenity::prelude::Context,& Ch{ d:dir, repo: git, ..}: &Ch, deleted_message_id: u64) {
+    use crate::emoji::named::*;
+    if let Ok(s) = git.schem(dir, deleted_message_id.into()){ 
+        let own = git.own().await.erase(deleted_message_id).unwrap();
+        git.remove(dir, deleted_message_id.into());
+        git.commit("plent", &format!("remove {deleted_message_id:x}"));
+        git.push();
+        if git == &repos::DESIGN_IT && !cfg!(debug_assertions) {
+            send(c,|x| x
+                .username("plent")
+                .embed(CreateEmbed::new().color(RM)
+                    .description(format!("{CANCEL} remove {} (added by {own}) (`{:x}.msch`)", emoji::mindustry::to_discord(&strip_colors(s.tags.get("name").unwrap())), deleted_message_id))
+                    .footer(CreateEmbedFooter::new("message was deleted.")
+                ))
+            ).await;
+        };
+    }
 }
 
 static HOOK: OnceLock<Webhook> = OnceLock::new();
@@ -186,7 +220,11 @@ async fn handle_message(
         .author_nick(c)
         .await
         .unwrap_or(new_message.author.name.clone());
-    let (dir, l, repo) = sep(SPECIAL.get(&new_message.channel_id.get()));
+    let post = EXTRA.get(&new_message.channel_id.get()).map(|x| x.clone());
+    if post.is_some() {
+        println!("recv message on thread")
+    }
+    let (dir, l, repo) = sep(SPECIAL.get(&new_message.channel_id.get()).or(post.as_ref()));
     let m = Msg {
         author: who.clone(),
         avatar: new_message.author.avatar_url().unwrap_or(CAT.to_string()),
@@ -226,13 +264,17 @@ async fn handle_message(
                     (new_message.author.name.clone(), new_message.author.id.get()),
                 );
                 use emoji::named::*;
-                if repo.id == 925674713429184564 && !cfg!(debug_assertions) {
+                if repo.name == "DESIGN_IT" && !cfg!(debug_assertions) {
                     send(c,|x| x
                     .avatar_url(new_message.author.avatar_url().unwrap_or(CAT.to_string()))
                     .username(&who)
                     .embed(CreateEmbed::new().color(AD)
                         .description(format!("https://discord.com/channels/925674713429184564/{}/{} {ADD} add {} (`{:x}.msch`)", m.channel_id,m.id, emoji::mindustry::to_discord(&strip_colors(s.tags.get("name").unwrap())), new_message.id.get())))
                 ).await;
+                }
+                if post.is_some() {
+                    EXTRA.remove(&new_message.channel_id.get());
+                    db::set(new_message.channel_id.get(), new_message.id.get());
                 }
                 repo.write(dir, new_message.id, s);
                 repo.add();
@@ -252,13 +294,11 @@ async fn handle_message(
 }
 static SEEN: LazyLock<Mutex<HashSet<(GuildId, u64, String, UserId)>>> =
     LazyLock::new(|| Mutex::new(HashSet::new()));
-
+static EXTRA: LazyLock<DashMap<u64, Ch>> = LazyLock::new(DashMap::new);
 pub struct Bot;
 impl Bot {
     pub async fn spawn() {
         use emoji::named::*;
-        println!("check clones");
-        clone();
         println!("bot startup");
         let tok =
             std::env::var("TOKEN").unwrap_or_else(|_| read_to_string("token").expect("wher token"));
@@ -293,17 +333,33 @@ impl Bot {
                                 // let User{id,name:owner_name,..} = c.http().get_user(*owner_id).await.unwrap();
                             }
                             // :deny:, @vd
-                            FullEvent::ReactionAdd {
-                                add_reaction: Reaction { message_id, guild_id: Some(guild_id), emoji: ReactionType::Custom {  id,.. } ,channel_id,member: Some( m @ Member{ nick,user,..}),..}}
-                            if let Some(git) = REPOS.get(&guild_id.get())
+                            FullEvent::ReactionAdd { add_reaction: Reaction {
+                                message_id,
+                                emoji: ReactionType::Custom { id, .. },
+                                channel_id,
+                                member: Some(m @ Member {
+                                    nick,
+                                    user,
+                                .. }), .. }
+                            }
+                            if let Some(Ch {
+                                d: dir,
+                                repo: git,
+                            .. }) = SPECIAL.get(&channel_id.get()).or(
+                                channel_id.to_channel(c.http()).await
+                                    .ok().and_then(|x| x.guild())
+                                        .and_then(|x| x.parent_id)
+                                        .and_then(|x| FORUMS.get(&x.get())),
+                                )
                                 && *id == git.deny_emoji
                                 && git.auth(m)
-                                && let Some(Ch {d:dir,..}) = SPECIAL.get(&channel_id.get())
                             => {
+                                // repos::ALL.into_iter().filter(|x|x.own().await.get(k))
                                 let m = c.http().get_message(*channel_id,* message_id).await?;
-                                if let Some(git) = REPOS.get(&guild_id.get()) && let Ok(s) = git.schem(dir,*message_id) {
+                                if let Ok(s) = git.schem(dir,*message_id) {
+                                    _ = db::remove(channel_id.get());
                                     let who = nick.as_deref().unwrap_or(&user.name);
-                                    let own = ownership::get(*guild_id).await.erase(*message_id).unwrap();
+                                    let own = ownership::get(git).await.erase(*message_id).unwrap();
                                     git.remove(dir, *message_id);
                                     git.commit(who, &format!("remove {:x}.msch", message_id.get()));
                                     git.push();
@@ -311,7 +367,7 @@ impl Bot {
                                     m.delete_reaction(c,Some(1174262682573082644.into()), ReactionType::Custom { animated: false, id: 1192316518395039864.into(), name: Some("merge".into()) }).await.unwrap();
                                     m.react(c,emojis::get!(DENY)).await?;
                                     // only design-it has a webhook (possibly subject to future change)
-                                    if *guild_id == 925674713429184564 && !cfg!(debug_assertions) {
+                                    if git.name == "DESIGN_IT" && !cfg!(debug_assertions) {
                                     send(c,|x| x
                                         .avatar_url(user.avatar_url().unwrap_or(CAT.to_string()))
                                         .username(who)
@@ -329,6 +385,13 @@ impl Bot {
                                     return Ok(());
                                 }
                                 handle_message(c, new_message, d).await?;
+                            },
+                            FullEvent::ThreadCreate { thread } if let Some(Ch{repo, d, ty: Type::Forum(_)}) = repos::FORUMS.get(&thread.parent_id.unwrap().get()) => {
+                                let tg = thread.guild(c).unwrap().channels[&thread.parent_id.unwrap()].available_tags.iter()
+                                .filter(|x| {
+                                    thread.applied_tags.contains(&x.id)
+                                }).map(|x| x.name.clone()).collect::<Vec<_>>();
+                                EXTRA.insert(thread.id.get(), Ch { repo, d, ty: Type::Assembled(tags(&*tg)) });   
                             }
                             FullEvent::MessageUpdate {event: MessageUpdateEvent {
                                 author: Some(author),
@@ -377,26 +440,18 @@ impl Bot {
                                     }
                                 }
                             }
+                            FullEvent::ThreadDelete { thread, .. } if let Some(ch) = FORUMS.get(&thread.parent_id.get()) && let Some(deleted_message_id) = db::remove(thread.id.get()) => del(&c, ch, deleted_message_id).await,
                             FullEvent::MessageDelete {
                                 deleted_message_id, channel_id, ..
                             } => {
-                                if let Some(&Ch{ d:dir, repo, ..}) = SPECIAL.get(&channel_id.get()) {
-                                    let git = &REPOS[&repo];
-                                    if let Ok(s) = git.schem(dir, *deleted_message_id) {
-                                        let own = git.own().await.erase(deleted_message_id.get()).unwrap();
-                                        git.remove(dir, *deleted_message_id);
-                                        git.commit("plent", &format!("remove {:x}", deleted_message_id.get()));
-                                        git.push();
-                                        if repo == 925674713429184564 && !cfg!(debug_assertions) {
-                                        send(c,|x| x
-                                            .username("plent")
-                                            .embed(CreateEmbed::new().color(RM)
-                                                .description(format!("{CANCEL} remove {} (added by {own}) (`{:x}.msch`)", emoji::mindustry::to_discord(&strip_colors(s.tags.get("name").unwrap())), deleted_message_id.get()))
-                                                .footer(CreateEmbedFooter::new("message was deleted.")
-                                            ))
-                                        ).await;
-                                    }
-                                    };
+                                if let Some(ch) = SPECIAL.get(&channel_id.get()).or(
+                                    channel_id.to_channel(c.http()).await
+                                    .ok().and_then(|x| x.guild())
+                                        .and_then(|x| x.parent_id)
+                                        .and_then(|x| FORUMS.get(&x.get()))
+                                ) {
+                                    _ = db::remove(channel_id.get());
+                                    del(&c, ch, deleted_message_id.get()).await;
                                 }
                                 if let Some((_, r)) = d.tracker.remove(deleted_message_id) {
                                     r.delete(c).await.unwrap();
@@ -508,24 +563,24 @@ impl Bot {
 //     Ok(())
 // }
 
-#[poise::command(slash_command)]
-pub async fn retag(c: Context<'_>, channel: ChannelId) -> Result<()> {
-    if c.author().id != OWNER {
-        poise::say_reply(c, "access denied. this incident will be reported").await?;
-        return Ok(());
-    }
-    c.defer().await?;
-    let tags = tags(SPECIAL[&channel.get()].labels);
-    for schem in search::dir(channel.get()).unwrap() {
-        let mut s = search::load(&schem);
-        let mut v = DataWrite::default();
-        s.tags.insert("labels".into(), tags.clone());
-        s.serialize(&mut v)?;
-        std::fs::write(schem, v.consume())?;
-    }
-    c.reply(emoji::named::OK).await?;
-    Ok(())
-}
+// #[poise::command(slash_command)]
+// pub async fn retag(c: Context<'_>, channel: ChannelId) -> Result<()> {
+//     if c.author().id != OWNER {
+//         poise::say_reply(c, "access denied. this incident will be reported").await?;
+//         return Ok(());
+//     }
+//     c.defer().await?;
+//     let tags = tags(SPECIAL[&channel.get()].labels);
+//     for schem in search::dir(channel.get()).unwrap() {
+//         let mut s = search::load(&schem);
+//         let mut v = DataWrite::default();
+//         s.tags.insert("labels".into(), tags.clone());
+//         s.serialize(&mut v)?;
+//         std::fs::write(schem, v.consume())?;
+//     }
+//     c.reply(emoji::named::OK).await?;
+//     Ok(())
+// }
 
 // dbg!(m
 //     .iter()
@@ -574,7 +629,7 @@ const VDS: &[u64] = &[
 pub async fn leaderboard(c: Context<'_>, channel: Option<ChannelId>, vds: bool) -> Result<()> {
     use emoji::named::*;
     c.defer().await?;
-    let lock = REPOS[&925674713429184564].own().await;
+    let lock = repos::DESIGN_IT.own().await;
     let process = |map: HashMap<u64, u16>| {
         let mut v = map.into_iter().collect::<Vec<_>>();
         v.sort_by_key(|(_, x)| *x);
@@ -588,41 +643,38 @@ pub async fn leaderboard(c: Context<'_>, channel: Option<ChannelId>, vds: bool) 
 
         out
     };
-    match channel {
-        Some(ch) => {
-            let Some(x) = SPECIAL.get(&ch.get()) else {
-                poise::say_reply(c, format!("{CANCEL} not a schem channel")).await?;
-                return Ok(());
-            };
-            let mut map = HashMap::new();
-            search::dir(ch.get())
-                .unwrap()
-                .map(|y| lock.map[&search::flake(y.file_name().unwrap().to_str().unwrap())].1)
-                .filter(|x| vds || !VDS.contains(x))
-                .for_each(|x| *map.entry(x).or_default() += 1);
-            poise::say_reply(
-                c,
-                format!(
-                    "## Leaderboard of {}\n{}",
-                    x.labels
-                        .join("")
-                        .chars()
-                        .map(|x| emoji::mindustry::TO_DISCORD[&x])
-                        .collect::<String>(),
-                    process(map)
-                ),
-            )
-        }
-        None => {
-            let mut map = std::collections::HashMap::new();
-            search::files()
-                .map(|(y, _)| lock.map[&search::flake(y.file_name().unwrap().to_str().unwrap())].1)
-                .filter(|x| vds || !VDS.contains(x))
-                .for_each(|x| *map.entry(x).or_default() += 1);
-            poise::say_reply(c, format!("## Leaderboard\n{}", process(map)))
-        }
-    }
-    .await?;
+    // match channel {
+    //     Some(ch) => {
+    //         let Some(x) = SPECIAL.get(&ch.get()) else {
+    //             poise::say_reply(c, format!("{CANCEL} not a schem channel")).await?;
+    //             return Ok(());
+    //         };
+    //         let mut map = HashMap::new();
+    //         search::dir(ch.get())
+    //             .unwrap()
+    //             .map(|y| lock.map[&search::flake(y.file_name().unwrap().to_str().unwrap())].1)
+    //             .filter(|x| vds || !VDS.contains(x))
+    //             .for_each(|x| *map.entry(x).or_default() += 1);
+    //         poise::say_reply(
+    //             c,
+    //             format!(
+    //                 "## Leaderboard of {}\n{}",
+    //                 x.labels
+    //                     .join("")
+    //                     .chars()
+    //                     .map(|x| emoji::mindustry::TO_DISCORD[&x])
+    //                     .collect::<String>(),
+    //                 process(map)
+    //             ),
+    //         )
+    //     }
+    //     None => {
+    let mut map = std::collections::HashMap::new();
+    search::files()
+        .map(|(y, _)| lock.map[&search::flake(y.file_name().unwrap().to_str().unwrap())].1)
+        .filter(|x| vds || !VDS.contains(x))
+        .for_each(|x| *map.entry(x).or_default() += 1);
+    poise::say_reply(c, format!("## Leaderboard\n{}", process(map))).await?;
     Ok(())
 }
 

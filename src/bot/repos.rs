@@ -1,15 +1,14 @@
 use super::{ownership::Ownership, *};
 use tokio::sync::Mutex;
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub enum Person {
     Role(u64),
     User(u64),
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub struct Repo {
-    pub id: u64,
     // delete power
     pub admins: &'static [Person],
     /// power to `scour` and `retag` etc.
@@ -17,15 +16,23 @@ pub struct Repo {
     pub deny_emoji: u64,
     /// clone url: https://bend-n:github_pat_…@github.com/…
     pub auth: &'static str,
+    pub name: &'static str,
     ownership: &'static LazyLock<Mutex<Ownership>>,
     // possibly posters?
+}
+
+impl std::cmp::PartialEq for Repo {
+    fn eq(&self, other: &Self) -> bool {
+        self.name == other.name
+    }
 }
 
 use super::schematic::Schem;
 use mindus::data::DataWrite;
 impl Repo {
     pub fn auth(&self, member: &Member) -> bool {
-        self.chief == member.user.id.get()
+        OWNER == member.user.id.get()
+            || self.chief == member.user.id.get()
             || (self.admins.iter().any(|&x| match x {
                 Person::Role(x) => member.roles.contains(&RoleId::new(x)),
                 Person::User(x) => member.user.id.get() == x,
@@ -56,7 +63,7 @@ impl Repo {
     }
 
     pub fn repopath(&self) -> std::path::PathBuf {
-        Path::new("repos").join(format!("{:x}", self.id))
+        Path::new("repos").join(format!("{}", self.name))
     }
 
     pub fn remove(&self, dir: &str, x: MessageId) {
@@ -71,10 +78,20 @@ impl Repo {
             .success());
     }
 
+    pub fn pull(&self) {
+        assert!(std::process::Command::new("git")
+            .current_dir(self.repopath())
+            .arg("pull")
+            .arg("-q")
+            .status()
+            .unwrap()
+            .success());
+    }
+
     pub fn commit(&self, by: &str, msg: &str) {
         assert!(std::process::Command::new("git")
             .current_dir(self.repopath())
-            .args(["commit", "-q", "--author"])
+            .args(["commit", "--no-gpg-sign", "-q", "--author"])
             .arg(format!("{by} <@designit>"))
             .arg("-m")
             .arg(msg)
@@ -84,6 +101,7 @@ impl Repo {
     }
 
     pub fn push(&self) {
+        #[cfg(not(debug_assertions))]
         assert!(std::process::Command::new("git")
             .current_dir(self.repopath())
             .arg("push")
@@ -116,18 +134,24 @@ macro_rules! decl {
     (
         [$($threaded:literal)+ $(,)?];
         $(
-            $repo:literal => [
+            $repo:ident => [
                 $(
                     // xu64 => "dirname" : [label, label]
                     $ch:literal => $item:literal : [$($labels: expr),* $(,)?]
-                ),+ $(,)?
+                ),*
+
+                $(forum $chf:literal => $itemf:literal),*
+
             ];
         )+
     ) => {
         use crate::emoji::to_mindustry::named::*;
-        pub const THREADED: phf::Set<u64> = phf::phf_set! { $($threaded,)+ };
-        pub const SPECIAL: phf::Map<u64, Ch> = phf::phf_map! {
-            $($($ch => Ch { d: $item, labels: &[$($labels,)+], repo: $repo },)?)+
+        pub static THREADED: phf::Set<u64> = phf::phf_set! { $($threaded,)+ };
+        pub static SPECIAL: phf::Map<u64, Ch> = phf::phf_map! {
+            $($($ch => Ch { d: $item, ty: Type::Basic(&[$($labels,)+]), repo: &$repo },)?)*
+        };
+        pub static FORUMS: phf::Map<u64, Ch> = phf::phf_map! {
+            $($($chf => Ch { d: $itemf, ty: Type::Forum(()), repo: &$repo },)*)+
         };
     };
 }
@@ -142,39 +166,42 @@ macro_rules! person {
 
 macro_rules! repos {
     (
-        $($repo_ident:ident $repo:literal => { admins: $admins:expr, chief: $chief:expr, deny_emoji: $deny:expr,} $(,)?),+
-    ) => {
-
-        $(static $repo_ident: LazyLock<Mutex<Ownership>> = LazyLock::new(|| Mutex::new(super::ownership::Ownership::new($repo)));)+
-        pub static REPOS: phf::Map<u64, Repo> = phf::phf_map! {
-            $($repo => Repo {
-                id: $repo,
+        $($repo_ident:ident => { admins: $admins:expr, chief: $chief:expr, deny_emoji: $deny:expr,} $(,)?),+
+    ) => { paste::paste! {
+        $(static [<$repo_ident _OWN>]: LazyLock<Mutex<Ownership>> = LazyLock::new(|| Mutex::new(super::ownership::Ownership::new(stringify!($repo_ident))));)+
+        $(pub static $repo_ident: Repo = Repo {
                 admins: $admins,
                 chief: $chief,
                 deny_emoji: $deny,
-                auth: include_str!(concat!("../../", $repo, ".auth")),
-                ownership: &$repo_ident,
-            },)+
-        };
-    };
+                name: stringify!($repo_ident),
+                auth: include_str!(concat!("../../", stringify!($repo_ident), ".auth")),
+                ownership: &[<$repo_ident _OWN>],
+        };)+
+        pub static ALL: &[&Repo] = &[$(&$repo_ident),+];
+    }};
 }
 
 repos! {
-    DESIGN_IT 925674713429184564u64 => {
+    DESIGN_IT => {
         admins: &[person!(&925676016708489227)],
         chief: 696196765564534825,
         deny_emoji: 1192388789952319499u64,
     },
-    ACP 1110086242177142854u64 => {
+    ACP => {
         admins: &[person!(&1110439183190863913)],
         chief: 696196765564534825,
         deny_emoji: 1182469319641272370u64,
-    }
+    },
+    MISC => {
+        admins: &[person!(&925676016708489227)],
+        chief: 705503407179431937,
+        deny_emoji: 1192388789952319499u64,
+    },
 }
 
 decl! {
     [1129391545418797147u64];
-    925674713429184564 => [
+    DESIGN_IT => [
 925721957209636914u64 => "cryofluid" : [CRYOFLUID, CRYOFLUID_MIXER],
 925721791475904533u64 => "graphite" : [GRAPHITE, GRAPHITE_PRESS],
 925721824556359720u64 => "metaglass" : [METAGLASS, KILN],
@@ -224,16 +251,33 @@ decl! {
 1222270513045438464u64 => "bore": [PRODUCTION],
 1226407271978766356u64 => "pulveriser": [PULVERIZER, SAND],
 1277138620863742003u64 => "melter": [MELTER, SLAG],
-1277138532355543070u64 => "separator": [SEPARATOR, SCRAP],
+1277138532355543070u64 => "separator": [SEPARATOR, SCRAP]
     ];
-1110086242177142854u64 => [
+MISC => [
+forum 1297452357549821972u64 => "s-defensive-outpost",
+forum 1297451239449038931u64 => "s-drill-pump",
+forum 1297449976015618109u64 => "s-miscellaneous",
+forum 1297448333895405588u64 => "s-power",
+forum 1297437167647461446u64 => "s-resources",
+forum 1297449040438493195u64 => "s-units",
+forum 1297463948999790642u64 => "e-bore-pump",
+forum 1297460753145659453u64 => "e-defensive-outpost",
+forum 1297464596810174508u64 => "e-miscellaneous",
+forum 1297463058092003328u64 => "e-power",
+forum 1297462381298843680u64 => "e-resources",
+forum 1297463616035098654u64 => "e-units"
+    ];
+ACP => [
         1276759410722738186u64 => "schems": ["plague"]
     ];
 }
 
 macro_rules! chief {
     ($c:ident) => {{
-        let repo = repos::REPOS[&$c.guild_id().unwrap().get()];
+        let repo = repos::SPECIAL
+            .get(&$c.id())
+            .ok_or(anyhow::anyhow!("not repo"))?
+            .repo;
         if repo.chief != $c.author().id.get() {
             poise::send_reply(
                 $c,

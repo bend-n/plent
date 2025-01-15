@@ -2,13 +2,16 @@ use serenity::all::MessageId;
 use std::collections::HashMap;
 use tokio::sync::MutexGuard;
 
+use super::repos::Repo;
+
+#[derive(Debug)]
 pub struct Ownership {
     pub map: HashMap<u64, (String, u64)>,
     path: &'static str,
 }
 impl Ownership {
-    pub fn new(id: u64) -> Self {
-        let path = format!("repos/{id:x}/ownership.json").leak();
+    pub fn new(id: &'static str) -> Self {
+        let path = format!("repos/{id}/ownership.json").leak();
         Self {
             map: serde_json::from_slice(&std::fs::read(&path).unwrap_or_default())
                 .unwrap_or_default(),
@@ -36,9 +39,9 @@ impl Ownership {
         &self.get(x.into().get()).0
     }
 }
-pub async fn whos(g: u64, x: impl Into<u64>) -> String {
-    super::repos::REPOS[&g].own().await.get(x.into()).0.clone()
+pub async fn whos(repo: &'static Repo, x: impl Into<u64>) -> String {
+    repo.own().await.get(x.into()).0.clone()
 }
-pub async fn get(g: impl Into<u64>) -> MutexGuard<'static, Ownership> {
-    super::repos::REPOS[&g.into()].own().await
+pub async fn get(g: &'static Repo) -> MutexGuard<'static, Ownership> {
+    g.own().await
 }

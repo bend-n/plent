@@ -23,9 +23,6 @@ poise = { git = "https://github.com/fgardt/poise", branch = "feat/user_apps" }
 anyhow = "1.0.75"
 regex = { version = "1.8.4", features = ["std"], default-features = false }
 mindus = { version = "5.0.7", features = [], default-features = false }
-flate2 = { version = "1.0", features = [
-  "cloudflare_zlib",
-], default-features = false }
 lemu = { features = ["diagnose"], default-features = false, version = "0.2.0" }
 dashmap = "5.5.3"
 oxipng = { version = "9.0.0", default-features = false }
@@ -43,18 +40,27 @@ axum = { version = "0.6.18", features = [
   "tokio",
   "http1",
   "macros",
-], default-features = false }
+], default-features = false, optional = true }
 serde_json = "1.0.122"
 serde = "1.0.204"
 atools = "0.1.5"
-# edg = { path = "../edg" }
 httpdate = "1.0.3"
 pollster = "0.3.0"
 btparse-stable = "0.1.2"
 cpu-monitor = "0.1.1"
 exoquant = "0.2.0"
-image = { version = "0.25.5", features = ["bmp", "jpeg", "png", "webp"], default-features = false }
+image = { version = "0.25.5", features = [
+  "bmp",
+  "jpeg",
+  "png",
+  "webp",
+], default-features = false }
 car = "0.1.1"
+kv = "0.24.0"
+sled = { version = "0.34.7", features = ["compression"] }
+
+[features]
+server = ["axum"]
 
 [build-dependencies]
 emojib = { git = "https://github.com/Apricot-Conservation-Project/emoji", features = [
@@ -62,8 +68,9 @@ emojib = { git = "https://github.com/Apricot-Conservation-Project/emoji", featur
 ], package = "emoji" }
 
 [profile.release]
-strip = true
+# strip = true
 lto = "thin"
+debug = 2
 
 [profile.dev.package.mindus]
 opt-level = 3
@@ -76,3 +83,4 @@ debug-assertions = false
 [patch.crates-io]
 serenity = { git = "https://github.com/serenity-rs/serenity" }
 mindus = { git = "https://github.com/bend-n/mindus" }
+fimg = { git = "https://github.com/bend-n/fimg" }
