@@ -2,12 +2,10 @@
 #![feature(
     let_chains,
     generic_const_exprs,
-    effects,
-    lazy_cell_consume,
     iter_intersperse,
     if_let_guard,
-    const_mut_refs,
-    backtrace_frames
+    backtrace_frames,
+    const_trait_impl
 )]
 emojib::the_crate! {}
 

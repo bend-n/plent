@@ -134,8 +134,14 @@ pub async fn send(
             {
                 e = e.description(v);
             }
+            let f = if v.width == v.height {
+                format!("{}²={}", v.width, v.width * v.height)
+            } else {
+                format!("{}×{}={}", v.height, v.width, v.width * v.height)
+            };
             e.field("req", cost(&v), true)
                 .title(name.clone())
+                .footer(CreateEmbedFooter::new(f))
                 .color(SUCCESS)
         });
     let h = m.channel.send_message(c, msg).await?;
