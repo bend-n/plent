@@ -10,6 +10,7 @@ mod db;
 use crate::emoji;
 use anyhow::Result;
 use dashmap::DashMap;
+use mindus::data::DataWrite;
 use mindus::Serializable;
 use poise::{serenity_prelude::*, CreateReply};
 use repos::{Repo, FORUMS, SPECIAL, THREADED};
@@ -304,7 +305,7 @@ impl Bot {
             std::env::var("TOKEN").unwrap_or_else(|_| read_to_string("token").expect("wher token"));
         let f = poise::Framework::builder()
             .options(poise::FrameworkOptions {
-                commands: vec![logic::run(), lb(), logic::run_file(), sorter::sorter(), schembrowser_instructions(), lb_no_vds(), ping(), help(), scour(), search::search(), search::file(), render(), render_file(), render_message(), map::render_message()],
+                commands: vec![logic::run(), lb(), logic::run_file(), sorter::sorter(), schembrowser_instructions(), lb_no_vds(), ping(), help(), scour(), search::search(), search::file(), rename(), rename_file(), render(), render_file(), render_message(), map::render_message()],
                 event_handler: |c, e, _, d| {
                     Box::pin(async move {
                         match e {
@@ -484,6 +485,8 @@ impl Bot {
                             schembrowser_instructions(),
                             render_file(),
                             render_message(),
+                            rename(),
+                            rename_file(),
                             map::render_message(),
                             logic::run_file(),
                             sorter::sorter(),
@@ -659,7 +662,7 @@ pub async fn leaderboard(c: Context<'_>, channel: Option<ChannelId>, vds: bool) 
     //             c,
     //             format!(
     //                 "## Leaderboard of {}\n{}",
-    //                 x.labels
+    //                 x.ls
     //                     .join("")
     //                     .chars()
     //                     .map(|x| emoji::mindustry::TO_DISCORD[&x])
@@ -955,6 +958,41 @@ pub async fn render_file(
     .await?;
     Ok(())
 }
+
+#[poise::command(slash_command)]
+/// Rename a schematic.
+async fn rename_file(c: Context<'_>, #[description = "schematic, msch"] s: Attachment, #[description = "new name"] name:String) -> Result<()> {
+    let Some(schematic::Schem{schem: mut s}) = schematic::from_attachments(std::slice::from_ref(&s)).await? else {
+        c.reply("no schem!").await?;
+        return Ok(());
+    };
+    s.tags.insert("name".to_string(), name);
+    let mut o= DataWrite::default();
+    s.serialize(&mut o)?;
+    poise::send_reply(c, CreateReply::default().attachment(
+        CreateAttachment::bytes(o.consume(),"out.msch")
+    )).await?;
+    Ok(())
+}
+
+
+#[poise::command(slash_command)]
+/// Rename a schematic.
+async fn rename(c: Context<'_>, #[description = "schematic, base64"] s: String, #[description = "new name"] name:String) -> Result<()> {
+    let Ok(schematic::Schem{schem: mut s}) = schematic::from_b64(&*s) else {
+        c.reply("no schem!").await?;
+        return Ok(());
+    };
+    s.tags.insert("name".to_string(), name);
+    let mut o= DataWrite::default();
+    s.serialize(&mut o)?;
+    poise::send_reply(c, CreateReply::default().attachment(
+        CreateAttachment::bytes(o.consume(),"out.msch")
+    )).await?;
+    Ok(())
+}
+
+
 
 #[poise::command(
     context_menu_command = "Render schematic",
