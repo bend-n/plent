@@ -2,6 +2,7 @@ use crate::emoji;
 use anyhow::Result;
 use base64::Engine;
 use logos::Logos;
+use mindus::data::schematic::R64Error;
 use mindus::data::DataRead;
 use mindus::*;
 use poise::{serenity_prelude::*, CreateReply};
@@ -12,8 +13,9 @@ use std::{fmt::Write, ops::Deref};
 
 use super::{strip_colors, Msg, SUCCESS};
 
-static RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(```)?(\n)?([^`]+)(\n)?(```)?").unwrap());
+static RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?").unwrap()
+});
 
 pub struct Schem {
     pub schem: Schematic,
@@ -42,19 +44,8 @@ pub async fn from_attachments(attchments: &[Attachment]) -> Result<Option<Schem>
             let Ok(s) = String::from_utf8(a.download().await?) else {
                 continue;
             };
-            let mut buff = vec![0; s.len() / 4 * 3 + 1];
-            let Ok(s) = base64::engine::general_purpose::STANDARD
-                .decode_slice(s.as_bytes(), &mut buff)
-                .map_err(|_| ())
-                .and_then(|n_out| {
-                    buff.truncate(n_out);
-                    Schematic::deserialize(&mut DataRead::new(&buff)).map_err(|_| ())
-                })
-            else {
-                println!("failed to read msg.txt");
-                continue;
-            };
-            return Ok(Some(Schem { schem: s }));
+            let schem = Schematic::deserialize_base64(&s)?;
+            return Ok(Some(Schem { schem }));
         }
     }
     Ok(None)
@@ -170,32 +161,25 @@ pub fn to_png(s: &Schematic) -> Vec<u8> {
 pub async fn from(m: (&str, &[Attachment])) -> Result<Option<Schem>> {
     match from_msg(m.0) {
         x @ Ok(Some(_)) => x,
+        // .or
         _ => from_attachments(m.1).await,
     }
 }
 
 pub fn from_msg(msg: &str) -> Result<Option<Schem>> {
-    let schem_text = match RE.captures(msg) {
+    let schem_text = match RE
+        .captures_iter(msg)
+        .map(|x| x.get(0).unwrap().as_str())
+        .find(|x| x.starts_with("bXNjaA"))
+    {
         None => return Ok(None),
         Some(x) => x,
-    }
-    .get(3)
-    .unwrap()
-    .as_str()
-    .trim();
+    };
     Ok(Some(from_b64(schem_text)?))
 }
 
-pub fn from_b64(schem_text: &str) -> Result<Schem> {
-    let mut buff = vec![0; schem_text.len() / 4 * 3 + 1];
-    let s = base64::engine::general_purpose::STANDARD
-        .decode_slice(schem_text.as_bytes(), &mut buff)
-        .map_err(anyhow::Error::from)
-        .and_then(|n_out| {
-            buff.truncate(n_out);
-            Schematic::deserialize(&mut DataRead::new(&buff)).map_err(anyhow::Error::from)
-        })?;
-    Ok(Schem { schem: s })
+pub fn from_b64(schem_text: &str) -> std::result::Result<Schem, R64Error> {
+    Schematic::deserialize_base64(schem_text).map(|schem| Schem { schem })
 }
 
 fn decode_tags(tags: &str) -> Vec<String> {

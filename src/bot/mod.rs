@@ -311,20 +311,20 @@ impl Bot {
                         match e {
                             FullEvent::Ready { .. } => {
                                 println!("bot ready");
-                                // pruning
-                                // while SEEN.lock().await.len() < 5 {
-                                // tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
-                                // }
-                                // let mut x = SEEN.lock().await.clone().into_iter().collect::<Vec<_>>();
-                                // x.sort_by_key(|(_, x, _,_)|*x);
-                                // for (g, _, _ ,_ ) in x.iter().take_while(|(_, x, _,_)| *x <= 6).filter(|(_, _, _,x)| *x != OWNER) {
-                                //     g.leave(&c).await.unwrap();
-                                // };
-                                // for (i, member_count, name, _) in x {
-                                //     println!(
-                                //             "{name} has {member_count:?} members {i:?}"
-                                //         );
-                                // }
+                                while SEEN.lock().await.len() < 5 {
+                                tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
+                                }
+                                let mut x = SEEN.lock().await.clone().into_iter().collect::<Vec<_>>();
+                                x.sort_by_key(|(_, x, _,_)|*x);
+                                for (g, _, _ ,_ ) in x.iter().take_while(|(_, x, _,_)| *x <= 10).filter(|(_, _, _,x)| *x != OWNER) {
+                                    // println!()
+                                    // g.leave(&c).await.unwrap();
+                                };
+                                for (i, member_count, name, _) in x {
+                                    println!(
+                                            "{name} has {member_count:?} members {i:?}"
+                                        );
+                                }
                                 SEEN.lock().await.clear();
                                 emojis::load(c.http()).await;
                                 hookup(c.http()).await;
@@ -894,25 +894,19 @@ pub async fn ping(c: Context<'_>) -> Result<()> {
 )]
 /// Renders base64 schematic.
 pub async fn render(c: Context<'_>, #[description = "schematic, base64"] s: String) -> Result<()> {
-    let Ok(s) = schematic::from_b64(&s) else {
-        poise::send_reply(
-            c,
+    poise::send_reply(c,
+    match schematic::from_b64(&s) {
+        Ok(s) => 
+            schematic::reply(
+                s,
+                &c.author().name,
+                &c.author().avatar_url().unwrap_or(CAT.to_string()),
+            )
+            .await?,
+        Err(e) => 
             CreateReply::default()
-                .content("schem broken / not schem")
-                .ephemeral(true),
-        )
-        .await?;
-        return Ok(());
-    };
-    poise::send_reply(
-        c,
-        schematic::reply(
-            s,
-            &c.author().name,
-            &c.author().avatar_url().unwrap_or(CAT.to_string()),
-        )
-        .await?,
-    )
+                .content(format!("schem broken / not schem: {e}")),
+    })
     .await?;
     Ok(())
 }
@@ -1001,26 +995,25 @@ async fn rename(c: Context<'_>, #[description = "schematic, base64"] s: String, 
 )]
 /// Renders schematic inside a message.
 pub async fn render_message(c: Context<'_>, m: Message) -> Result<()> {
-    let Some(s) = schematic::from((&m.content, &m.attachments)).await? else {
-        poise::send_reply(
-            c,
+    poise::send_reply(
+        c, match schematic::from((&m.content, &m.attachments)).await {
+        Ok(Some(s)) =>
+            schematic::reply(
+                s,
+                &m.author_nick(c)
+                    .await
+                    .unwrap_or_else(|| m.author.name.clone()),
+                &m.author.avatar_url().unwrap_or(CAT.to_string()),
+            )
+            .await?,
+        Err(e) => 
+            CreateReply::default()
+                .content(format!("schematic error {e}")),
+        Ok(None) => 
             CreateReply::default()
                 .content("no schem found")
-                .ephemeral(true),
-        )
-        .await?;
-        return Ok(());
-    };
-    poise::send_reply(
-        c,
-        schematic::reply(
-            s,
-            &m.author_nick(c)
-                .await
-                .unwrap_or_else(|| m.author.name.clone()),
-            &m.author.avatar_url().unwrap_or(CAT.to_string()),
-        )
-        .await?,
+                .ephemeral(true)
+        }
     )
     .await?;
     Ok(())
