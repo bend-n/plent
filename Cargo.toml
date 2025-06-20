@@ -23,7 +23,9 @@ poise = { git = "https://github.com/fgardt/poise", branch = "feat/user_apps" }
 anyhow = "1.0.75"
 regex = { version = "1.8.4", features = ["std"], default-features = false }
 mindus = { version = "5.0.7", features = [], default-features = false }
-lemu = { features = ["diagnose"], default-features = false, version = "0.2.0" }
+lemu = { features = [
+  "diagnose",
+], default-features = false, git = "https://github.com/bend-n/mindus" }
 dashmap = "5.5.3"
 oxipng = { version = "9.0.0", default-features = false }
 fimg = { version = "0.4.26", features = ["save"] }
@@ -58,6 +60,7 @@ image = { version = "0.25.5", features = [
 car = "0.1.1"
 kv = "0.24.0"
 sled = { version = "0.34.7", features = ["compression"] }
+remapper = { version = "0.1.0", path = "../remapper" }
 
 [features]
 server = ["axum"]

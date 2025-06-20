@@ -251,7 +251,8 @@ decl! {
 1222270513045438464u64 => "bore": [PRODUCTION],
 1226407271978766356u64 => "pulveriser": [PULVERIZER, SAND],
 1277138620863742003u64 => "melter": [MELTER, SLAG],
-1277138532355543070u64 => "separator": [SEPARATOR, SCRAP]
+1277138532355543070u64 => "separator": [SEPARATOR, SCRAP],
+1365819562259386533u64 => "launch-pad": [ADVANCED_LAUNCH_PAD]
     ];
 MISC => [
 forum 1297452357549821972u64 => "s-defensive-outpost",
@@ -275,7 +276,7 @@ ACP => [
 macro_rules! chief {
     ($c:ident) => {{
         let repo = repos::SPECIAL
-            .get(&$c.id())
+            .get(&$c.channel_id().get())
             .ok_or(anyhow::anyhow!("not repo"))?
             .repo;
         if repo.chief != $c.author().id.get() {

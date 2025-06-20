@@ -305,7 +305,7 @@ impl Bot {
             std::env::var("TOKEN").unwrap_or_else(|_| read_to_string("token").expect("wher token"));
         let f = poise::Framework::builder()
             .options(poise::FrameworkOptions {
-                commands: vec![logic::run(), lb(), logic::run_file(), sorter::sorter(), schembrowser_instructions(), lb_no_vds(), ping(), help(), scour(), search::search(), search::file(), rename(), rename_file(), render(), render_file(), render_message(), map::render_message()],
+                commands: vec![logic::run(), lb(), logic::run_file(), sorter::sorter(), sorter::mapper(), schembrowser_instructions(), lb_no_vds(), ping(), help(), scour(), search::search(), search::file(), rename(), rename_file(), render(), render_file(), render_message(), map::render_message()],
                 event_handler: |c, e, _, d| {
                     Box::pin(async move {
                         match e {
@@ -490,11 +490,10 @@ impl Bot {
                             map::render_message(),
                             logic::run_file(),
                             sorter::sorter(),
+                            sorter::mapper(),
                         ],
                     )
                     .await?;
-                    poise::builtins::register_in_guild(ctx, &[scour()], 1110086242177142854.into())
-                        .await?;
                     poise::builtins::register_in_guild(
                         ctx,
                         &[search::search(), lb(), lb_no_vds(), search::file()],
@@ -593,6 +592,7 @@ impl Bot {
 
 const VDS: &[u64] = &[
     1222024015015706668,
+    742034952077705317,
     126381304857100288,
     175218107084832768,
     221780012372721664,
@@ -870,7 +870,7 @@ pub async fn ping(c: Context<'_>) -> Result<()> {
     // let m = (m / 0.1) + 0.5;
     // let m = m.floor() * 0.1;
     c.reply(format!(
-        "pong!\n{DISCORD}{RIGHT}: {} — {HOST} mem used: {m:.1}MiB - <:stopwatch:1283755550726684723> cpu utilization {util:.2}% — <:time:1244901561688260742> uptime: {}",
+        "pong!\n{DISCORD}{RIGHT}: {} — {HOST}: {m:.1}MiB - <:stopwatch:1361892467510870167><:world_processor:1307657404128690268> {util:.0}% — <:up:1307658579251167302><:time:1361892343199957022> {}",
         humantime::format_duration(Duration::from_millis(
             Timestamp::now()
                 .signed_duration_since(*c.created_at())

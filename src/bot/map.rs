@@ -55,17 +55,10 @@ pub async fn reply(a: &Attachment) -> Result<ControlFlow<CreateReply, String>> {
         (Err(e), _) => return Ok(ControlFlow::Continue(string(e))),
         (Ok(m), deser_took) => (m, deser_took),
     };
-    let name = strip_colors(m.tags.get("name").or(m.tags.get("mapname")).unwrap());
-    let (
-        Timings {
-            deser_took,
-            render_took,
-            compression_took,
-            total,
-        },
-        png,
-    ) = render(m, deser_took).await;
-    Ok(ControlFlow::Break(CreateReply::default().attachment(CreateAttachment::bytes(png,"map.png")).embed(CreateEmbed::new().title(&name).footer(CreateEmbedFooter::new(format!("render of {name} took: {:.3}s (deser: {}ms, render: {:.3}s, compression: {:.3}s)", total.as_secs_f32(), deser_took.as_millis(), render_took.as_secs_f32(), compression_took.as_secs_f32()))).attachment("map.png").color(SUCCESS))))
+    let (a, e) = embed(m, deser_took).await;
+    Ok(ControlFlow::Break(
+        CreateReply::default().attachment(a).embed(e),
+    ))
 }
 
 struct Timings {
@@ -116,11 +109,11 @@ pub async fn find(
 }
 
 pub async fn with(msg: &Message, c: &serenity::client::Context) -> Result<()> {
-    let Some((auth, m, deser_took)) = find(msg, c).await? else {
+    let Some((_auth, m, deser_took)) = find(msg, c).await? else {
         return Ok(());
     };
     let t = msg.channel_id.start_typing(&c.http);
-    let (png, embed) = embed(m, &auth, deser_took).await;
+    let (png, embed) = embed(m, deser_took).await;
     t.stop();
     msg.channel_id
         .send_message(c, CreateMessage::new().add_file(png).embed(embed))
@@ -128,29 +121,27 @@ pub async fn with(msg: &Message, c: &serenity::client::Context) -> Result<()> {
     Ok(())
 }
 
-async fn embed(m: Map, auth: &str, deser_took: Duration) -> (CreateAttachment, CreateEmbed) {
+async fn embed(m: Map, deser_took: Duration) -> (CreateAttachment, CreateEmbed) {
     let name = strip_colors(m.tags.get("name").or(m.tags.get("mapname")).unwrap());
+    let d = strip_colors(m.tags.get("description").map(|x| &**x).unwrap_or("?"));
+    let f = if m.width == m.height {
+        format!("{}²", m.width)
+    } else {
+        format!("{}×{}", m.height, m.width)
+    };
     let (timings, png) = render(m, deser_took).await;
     (
         CreateAttachment::bytes(png, "map.png"),
         CreateEmbed::new()
             .title(&name)
-            .footer(footer((&name, auth), timings))
+            .description(d)
+            .footer(CreateEmbedFooter::new(format!(
+                "render of {name} ({f}) took: {:.3}s",
+                timings.total.as_secs_f64()
+            )))
             .attachment("map.png")
             .color(SUCCESS),
     )
-}
-
-fn footer(
-    (name, auth): (&str, &str),
-    Timings {
-        deser_took,
-        render_took,
-        compression_took,
-        total,
-    }: Timings,
-) -> CreateEmbedFooter {
-    CreateEmbedFooter::new(format!("render of {name} (requested by {auth}) took: {:.3}s (deser: {}ms, render: {:.3}s, compression: {:.3}s)", total.as_secs_f32(), deser_took.as_millis(), render_took.as_secs_f32(), compression_took.as_secs_f32()))
 }
 
 #[poise::command(
@@ -160,11 +151,11 @@ fn footer(
 )]
 /// Renders map inside a message.
 pub async fn render_message(c: super::Context<'_>, m: Message) -> Result<()> {
-    let Some((auth, m, deser_took)) = find(&m, c.serenity_context()).await? else {
+    let Some((_auth, m, deser_took)) = find(&m, c.serenity_context()).await? else {
         poise::say_reply(c, "no map").await?;
         return Ok(());
     };
-    let (png, embed) = embed(m, &auth, deser_took).await;
+    let (png, embed) = embed(m, deser_took).await;
     poise::send_reply(c, CreateReply::default().attachment(png).embed(embed)).await?;
     Ok(())
 }
