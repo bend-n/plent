@@ -12,6 +12,7 @@ pub async fn run_file(
     #[description = "logic, txt"] mlog: Attachment,
     #[description = "number of iterations (0–50)"] iterations: Option<u8>,
 ) -> Result<()> {
+    super::log(&ctx);
     ctx.defer().await?;
     let bytes = mlog.download().await?;
     let Ok(code) = String::from_utf8(bytes) else {
@@ -41,6 +42,7 @@ pub async fn run(
     #[description = "number of iterations"] kv: KeyValueArgs,
     #[description = "Script"] block: CodeBlock,
 ) -> Result<()> {
+    super::log(&ctx);
     match exec(
         block.code,
         kv.get("iters")

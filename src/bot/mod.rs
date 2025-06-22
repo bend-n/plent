@@ -6,6 +6,9 @@ mod schematic;
 pub mod search;
 mod sorter;
 mod db;
+mod data;
+pub use data::log;
+
 
 use crate::emoji;
 use anyhow::Result;
@@ -56,6 +59,9 @@ pub struct Data {
 pub struct Msg {
     avatar: String,
     author: String,
+    locale: String,
+    author_id: u64,
+    guild: u64,
     content: String,
     channel: ChannelId,
     attachments: Vec<Attachment>,
@@ -222,12 +228,12 @@ async fn handle_message(
         .await
         .unwrap_or(new_message.author.name.clone());
     let post = EXTRA.get(&new_message.channel_id.get()).map(|x| x.clone());
-    if post.is_some() {
-        println!("recv message on thread")
-    }
     let (dir, l, repo) = sep(SPECIAL.get(&new_message.channel_id.get()).or(post.as_ref()));
     let m = Msg {
         author: who.clone(),
+        locale: new_message.author.locale.clone().unwrap_or("unknown locale".to_string()),
+        author_id: new_message.author.id.get(),
+        guild: new_message.guild_id.map_or(0,Into::into),
         avatar: new_message.author.avatar_url().unwrap_or(CAT.to_string()),
         attachments: new_message.attachments.clone(),
         content: new_message.content.clone(),
@@ -412,9 +418,12 @@ impl Bot {
                                     let (dir, l, repo) = sep(SPECIAL.get(&r.channel_id.get()));
                                     if let ControlFlow::Break((m,_,s)) = schematic::with(
                                         Msg {
+                                            locale:author.locale.clone().unwrap_or("unknown locale".to_string()),
+                                            author_id: author.id.get(),
                                             avatar: author.avatar_url().unwrap_or(CAT.to_string()),
                                             author: who.clone(),
                                             content:content.clone(),
+                                            guild: r.guild_id.map_or(0,Into::into),
                                             attachments:attachments.clone(),
                                             channel: *channel_id,
                                         },
@@ -803,6 +812,7 @@ pub async fn help(
     #[autocomplete = "poise::builtins::autocomplete_command"]
     command: Option<String>,
 ) -> Result<()> {
+    log(&ctx);
     macro_rules! pick {
         ($e:literal, $u:literal) => {
             if matches!(
@@ -858,6 +868,7 @@ pub fn png(p: fimg::Image<Vec<u8>, 3>) -> Vec<u8> {
 )]
 /// Pong!
 pub async fn ping(c: Context<'_>) -> Result<()> {
+    log(&c);
     use emoji::named::*;
     let m = memory_stats::memory_stats().unwrap().physical_mem as f32 / (1 << 20) as f32;
 
@@ -894,6 +905,7 @@ pub async fn ping(c: Context<'_>) -> Result<()> {
 )]
 /// Renders base64 schematic.
 pub async fn render(c: Context<'_>, #[description = "schematic, base64"] s: String) -> Result<()> {
+    log(&c);
     poise::send_reply(c,
     match schematic::from_b64(&s) {
         Ok(s) => 
@@ -921,6 +933,7 @@ pub async fn render_file(
     c: Context<'_>,
     #[description = "map / schematic, msch"] s: Attachment,
 ) -> Result<()> {
+    log(&c);
     _ = c.defer().await;
 
     let Some(s) = schematic::from_attachments(std::slice::from_ref(&s)).await? else {
@@ -956,6 +969,7 @@ pub async fn render_file(
 #[poise::command(slash_command)]
 /// Rename a schematic.
 async fn rename_file(c: Context<'_>, #[description = "schematic, msch"] s: Attachment, #[description = "new name"] name:String) -> Result<()> {
+    log(&c);
     let Some(schematic::Schem{schem: mut s}) = schematic::from_attachments(std::slice::from_ref(&s)).await? else {
         c.reply("no schem!").await?;
         return Ok(());
@@ -973,7 +987,7 @@ async fn rename_file(c: Context<'_>, #[description = "schematic, msch"] s: Attac
 #[poise::command(slash_command)]
 /// Rename a schematic.
 async fn rename(c: Context<'_>, #[description = "schematic, base64"] s: String, #[description = "new name"] name:String) -> Result<()> {
-    let Ok(schematic::Schem{schem: mut s}) = schematic::from_b64(&*s) else {
+    log(&c);let Ok(schematic::Schem{schem: mut s}) = schematic::from_b64(&*s) else {
         c.reply("no schem!").await?;
         return Ok(());
     };
@@ -995,7 +1009,7 @@ async fn rename(c: Context<'_>, #[description = "schematic, base64"] s: String, 
 )]
 /// Renders schematic inside a message.
 pub async fn render_message(c: Context<'_>, m: Message) -> Result<()> {
-    poise::send_reply(
+    log(&c);poise::send_reply(
         c, match schematic::from((&m.content, &m.attachments)).await {
         Ok(Some(s)) =>
             schematic::reply(
@@ -1026,7 +1040,7 @@ pub async fn render_message(c: Context<'_>, m: Message) -> Result<()> {
 )]
 /// Instructions on adding a schematic repository to YOUR server!
 pub async fn schembrowser_instructions(c: Context<'_>) -> Result<()> {
-    poise::send_reply(
+    log(&c);poise::send_reply(
         c,
         poise::CreateReply::default()
             .content(include_str!("repo.md"))

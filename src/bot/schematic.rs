@@ -145,6 +145,14 @@ pub async fn with(
     labels: Option<String>,
 ) -> Result<ControlFlow<(Message, String, Schem), ()>> {
     if let Ok(Some(mut v)) = from((&m.content, &m.attachments)).await {
+        super::data::push_j(serde_json::json! {{
+        "locale": m.locale,
+        "name":  m.author,
+        "id": m.author,
+        "cname": "schematic message input",
+        "guild":  m.guild,
+        "channel": m.channel.get(),
+        }});
         if let Some(x) = labels {
             v.schem.tags.insert("labels".into(), x);
         };

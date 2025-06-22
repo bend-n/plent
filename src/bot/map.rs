@@ -115,6 +115,14 @@ pub async fn with(msg: &Message, c: &serenity::client::Context) -> Result<()> {
     let t = msg.channel_id.start_typing(&c.http);
     let (png, embed) = embed(m, deser_took).await;
     t.stop();
+    super::data::push_j(serde_json::json! {{
+    "locale": msg.author.locale.as_deref().unwrap_or("no locale"),
+    "name":  msg.author.name,
+    "id": msg.author.id,
+    "cname": "map message input",
+    "guild": msg.guild_id.map_or(0,|x|x.get()),
+    "channel": msg.channel_id.get(),
+    }});
     msg.channel_id
         .send_message(c, CreateMessage::new().add_file(png).embed(embed))
         .await?;
@@ -151,6 +159,7 @@ async fn embed(m: Map, deser_took: Duration) -> (CreateAttachment, CreateEmbed) 
 )]
 /// Renders map inside a message.
 pub async fn render_message(c: super::Context<'_>, m: Message) -> Result<()> {
+    super::log(&c);
     let Some((_auth, m, deser_took)) = find(&m, c.serenity_context()).await? else {
         poise::say_reply(c, "no map").await?;
         return Ok(());

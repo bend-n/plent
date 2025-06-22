@@ -61,6 +61,7 @@ car = "0.1.1"
 kv = "0.24.0"
 sled = { version = "0.34.7", features = ["compression"] }
 remapper = { version = "0.1.0", path = "../remapper" }
+implicit-fn = "0.1.0"
 
 [features]
 server = ["axum"]

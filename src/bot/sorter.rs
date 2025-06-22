@@ -142,6 +142,7 @@ pub async fn sorter(
     #[description = "scaling algorithm, defaults to nearest"] algorithm: Option<Scaling>,
     #[description = "dithering algorithm, defaults to none"] dithered: Option<Dithering>,
 ) -> Result<()> {
+    super::log(&c);
     c.defer().await?;
     let image = i.download().await?;
     match image::load_from_memory(&image) {
@@ -195,6 +196,7 @@ pub async fn mapper(
     #[description = "dithering algorithm, defaults to none (if you want the map to be playable, go with ordered)"]
     dithered: Option<Dithering>,
 ) -> Result<()> {
+    super::log(&c);
     c.defer().await?;
     let image = i.download().await?;
     match image::load_from_memory(&image) {
