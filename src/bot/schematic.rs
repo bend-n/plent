@@ -148,7 +148,7 @@ pub async fn with(
         super::data::push_j(serde_json::json! {{
         "locale": m.locale,
         "name":  m.author,
-        "id": m.author,
+        "id": m.author_id,
         "cname": "schematic message input",
         "guild":  m.guild,
         "channel": m.channel.get(),
