@@ -188,10 +188,10 @@ async fn del(c: &serenity::prelude::Context,& Ch{ d:dir, repo: git, ..}: &Ch, de
 static HOOK: OnceLock<Webhook> = OnceLock::new();
 
 pub async fn hookup(c: &impl AsRef<Http>) {
-    let v = Webhook::from_url(c, {
+    let v = Webhook::from_url(c, 
         &std::env::var("WEBHOOK")
             .unwrap_or_else(|_| read_to_string("webhook").expect("wher webhook"))
-    })
+    )
     .await
     .unwrap();
     HOOK.get_or_init(|| v);
@@ -229,6 +229,18 @@ async fn handle_message(
         .unwrap_or(new_message.author.name.clone());
     let post = EXTRA.get(&new_message.channel_id.get()).map(|x| x.clone());
     let (dir, l, repo) = sep(SPECIAL.get(&new_message.channel_id.get()).or(post.as_ref()));
+    if new_message.author.id.get()==OWNER&&new_message.content.contains("meow"){
+        new_message.author
+        .direct_message(
+                c,
+                poise::serenity_prelude::CreateMessage::new().content(format!(
+                        "your match `meow` was satisfied on message ```\n{}\n``` {}",
+                        new_message.content.replace('`', "​`"),
+                        new_message.link()
+                )),
+        )
+        .await?;
+    }
     let m = Msg {
         author: who.clone(),
         locale: new_message.author.locale.clone().unwrap_or("unknown locale".to_string()),
@@ -318,6 +330,7 @@ impl Bot {
                             FullEvent::Ready { .. } => {
                                 println!("bot ready");
                                 while SEEN.lock().await.len() < 5 {
+
                                 tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
                                 }
                                 let mut x = SEEN.lock().await.clone().into_iter().collect::<Vec<_>>();
@@ -868,6 +881,10 @@ pub fn png(p: fimg::Image<Vec<u8>, 3>) -> Vec<u8> {
 )]
 /// Pong!
 pub async fn ping(c: Context<'_>) -> Result<()> {
+	// let p = Timestamp::now()
+	//     .signed_duration_since(*c.created_at())
+	//     .to_std()?
+	//     .as_millis() as _;
     log(&c);
     use emoji::named::*;
     let m = memory_stats::memory_stats().unwrap().physical_mem as f32 / (1 << 20) as f32;
@@ -881,13 +898,8 @@ pub async fn ping(c: Context<'_>) -> Result<()> {
     // let m = (m / 0.1) + 0.5;
     // let m = m.floor() * 0.1;
     c.reply(format!(
-        "pong!\n{DISCORD}{RIGHT}: {} — {HOST}: {m:.1}MiB - <:stopwatch:1361892467510870167><:world_processor:1307657404128690268> {util:.0}% — <:up:1307658579251167302><:time:1361892343199957022> {}",
-        humantime::format_duration(Duration::from_millis(
-            Timestamp::now()
-                .signed_duration_since(*c.created_at())
-                .to_std()?
-                .as_millis() as _
-        )),
+        "pong!\n{DISCORD}{RIGHT}: {}ms — {HOST}: {m:.1}MiB - <:stopwatch:1361892467510870167><:world_processor:1307657404128690268> {util:.0}% — <:up:1307658579251167302><:time:1361892343199957022> {}",
+        c.ping().await.as_millis(),
         humantime::format_duration(Duration::from_secs(
             Instant::now()
                 .duration_since(*super::START.get().unwrap())
@@ -937,7 +949,7 @@ pub async fn render_file(
     _ = c.defer().await;
 
     let Some(s) = schematic::from_attachments(std::slice::from_ref(&s)).await? else {
-        match map::reply(&s).await? {
+        match map::reply(c, &s).await? {
             ControlFlow::Break(x) => return Ok(drop(poise::send_reply(c, x).await?)),
             ControlFlow::Continue(e) if e != "not a map." => {
                 return Ok(drop(poise::say_reply(c, e).await?))

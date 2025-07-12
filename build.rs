@@ -35,9 +35,9 @@ fn main() -> std::io::Result<()> {
 
     emojib::load();
 
-    for path in fs::read_dir("html-src")? {
-        process(path.unwrap().path().file_name().unwrap())?;
-    }
+    // for path in fs::read_dir("html-src")? {
+    //     process(path.unwrap().path().file_name().unwrap())?;
+    // }
     println!("cargo:rerun-if-changed=html-src/");
     println!("cargo:rerun-if-changed=build.rs");
     Ok(())

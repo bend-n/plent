@@ -1,5 +1,6 @@
 #![allow(incomplete_features)]
 #![feature(
+    try_blocks,
     let_chains,
     generic_const_exprs,
     iter_intersperse,

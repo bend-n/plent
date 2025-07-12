@@ -1,9 +1,9 @@
 use anyhow::Result;
 use atools::prelude::*;
 use block::SORTER;
-use fimg::{indexed::IndexedImage, Image};
+use fimg::{Image, indexed::IndexedImage};
 use mindus::*;
-use poise::{serenity_prelude::*, ChoiceParameter};
+use poise::{ChoiceParameter, serenity_prelude::*};
 use remapper::pal;
 
 #[derive(ChoiceParameter)]
@@ -92,14 +92,15 @@ fn sort(
 
     let (width, height) = (x.width() as usize, x.height() as usize);
     let mut s = Schematic::new(width, height);
+    let q = unsafe { quant.raw() };
     let pixels = (0..width)
         .flat_map(|x_| (0..height).map(move |y| (x_, y)))
-        .filter_map(|(x_, y_)| {
-            match unsafe { quant.raw().buffer() }[(height - y_ - 1) * width + x_] {
+        .filter_map(
+            |(x_, y_)| match q.buffer()[(height - y_ - 1) * width + x_] {
                 0 => None,
                 x => Some(((x_, y_), x - 1)),
-            }
-        });
+            },
+        );
     for ((x, y), i) in pixels {
         s.set(
             x,

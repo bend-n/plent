@@ -9,5 +9,6 @@ commands:
 
 - `eval`: executes mlog. see `/help eval` for more info.
 - `sorter`: creates sorter representations of images.
+- `mapper`: creates map representations of images.
 
 bugs to be reported [here](https://github.com/bend-n/mindus/issues/new), or ping <@696196765564534825>.
