@@ -14,12 +14,15 @@ fn string((x, f): (ReadError, &str)) -> String {
         ReadError::Decompress(_) | ReadError::Header(_) => {
             format!("not a map.")
         }
+        ReadError::NoBlockFound(b) => {
+        	format!("couldnt find block `{b}`. mods are not supported")
+        }
         ReadError::NoSuchBlock(b) => {
-            format!("couldnt find block `{b}`. error originates from `{f}`")
+            format!("couldnt find block at index `{b}`. mods are not supported")
         }
         ReadError::Version(v) => {
             format!(
-                "unsupported version: `{v}`. supported versions: `7`. error originates from `{f}`",
+                "unsupported version: `{v}`. supported versions: `7, 8`.",
             )
         }
         ReadError::Read(r) => {
