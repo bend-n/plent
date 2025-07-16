@@ -215,8 +215,6 @@ where
 
 const RM: (u8, u8, u8) = (242, 121, 131);
 const AD: (u8, u8, u8) = (128, 191, 255);
-const CAT: &str =
-    "https://cdn.discordapp.com/avatars/696196765564534825/6f3c605329ffb5cfb790343f59ed355d.webp";
 
 async fn handle_message(
     c: &poise::serenity_prelude::Context,
@@ -246,7 +244,7 @@ async fn handle_message(
         locale: new_message.author.locale.clone().unwrap_or("unknown locale".to_string()),
         author_id: new_message.author.id.get(),
         guild: new_message.guild_id.map_or(0,Into::into),
-        avatar: new_message.author.avatar_url().unwrap_or(CAT.to_string()),
+        avatar: new_message.author.face(),
         attachments: new_message.attachments.clone(),
         content: new_message.content.clone(),
         channel: new_message.channel_id,
@@ -285,7 +283,7 @@ async fn handle_message(
                 use emoji::named::*;
                 if repo.name == "DESIGN_IT" && !cfg!(debug_assertions) {
                     send(c,|x| x
-                    .avatar_url(new_message.author.avatar_url().unwrap_or(CAT.to_string()))
+                    .avatar_url(new_message.author.face())
                     .username(&who)
                     .embed(CreateEmbed::new().color(AD)
                         .description(format!("https://discord.com/channels/925674713429184564/{}/{} {ADD} add {} (`{:x}.msch`)", m.channel_id,m.id, emoji::mindustry::to_discord(&strip_colors(s.tags.get("name").unwrap())), new_message.id.get())))
@@ -389,7 +387,7 @@ impl Bot {
                                     // only design-it has a webhook (possibly subject to future change)
                                     if git.name == "DESIGN_IT" && !cfg!(debug_assertions) {
                                     send(c,|x| x
-                                        .avatar_url(user.avatar_url().unwrap_or(CAT.to_string()))
+                                        .avatar_url(user.face())
                                         .username(who)
                                         .embed(CreateEmbed::new().color(RM)
                                             .description(format!("https://discord.com/channels/925674713429184564/{channel_id}/{message_id} {} {} (added by {own}) (`{:x}`)", emojis::get!(DENY), emoji::mindustry::to_discord(&strip_colors(s.tags.get("name").unwrap())), message_id.get())))
@@ -433,7 +431,7 @@ impl Bot {
                                         Msg {
                                             locale:author.locale.clone().unwrap_or("unknown locale".to_string()),
                                             author_id: author.id.get(),
-                                            avatar: author.avatar_url().unwrap_or(CAT.to_string()),
+                                            avatar: author.face(),
                                             author: who.clone(),
                                             content:content.clone(),
                                             guild: r.guild_id.map_or(0,Into::into),
@@ -450,7 +448,7 @@ impl Bot {
                                             // update :)
                                             if *guild_id == 925674713429184564 && !cfg!(debug_assertions) {
                                             send(c,|x| x
-                                                .avatar_url(author.avatar_url().unwrap_or(CAT.to_string()))
+                                                .avatar_url(author.face())
                                                 .username(&who)
                                                 .embed(CreateEmbed::new().color(AD)
                                                     .description(format!("https://discord.com/channels/925674713429184564/{channel_id}/{id} {ROTATE} update {} (`{:x}.msch`)", emoji::mindustry::to_discord(&strip_colors(s.tags.get("name").unwrap())), id.get())))
@@ -924,7 +922,7 @@ pub async fn render(c: Context<'_>, #[description = "schematic, base64"] s: Stri
             schematic::reply(
                 s,
                 &c.author().name,
-                &c.author().avatar_url().unwrap_or(CAT.to_string()),
+                &c.author().face(),
             )
             .await?,
         Err(e) => 
@@ -970,7 +968,7 @@ pub async fn render_file(
         schematic::reply(
             s,
             &c.author().name,
-            &c.author().avatar_url().unwrap_or(CAT.to_string()),
+            &c.author().face(),
         )
         .await?,
     )
@@ -1029,7 +1027,7 @@ pub async fn render_message(c: Context<'_>, m: Message) -> Result<()> {
                 &m.author_nick(c)
                     .await
                     .unwrap_or_else(|| m.author.name.clone()),
-                &m.author.avatar_url().unwrap_or(CAT.to_string()),
+                &m.author.face(),
             )
             .await?,
         Err(e) => 
