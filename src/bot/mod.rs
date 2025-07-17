@@ -7,6 +7,7 @@ pub mod search;
 mod sorter;
 mod db;
 mod data;
+use charts_rs::{Series, THEME_GRAFANA};
 pub use data::log;
 
 
@@ -227,18 +228,6 @@ async fn handle_message(
         .unwrap_or(new_message.author.name.clone());
     let post = EXTRA.get(&new_message.channel_id.get()).map(|x| x.clone());
     let (dir, l, repo) = sep(SPECIAL.get(&new_message.channel_id.get()).or(post.as_ref()));
-    if new_message.author.id.get()==OWNER&&new_message.content.contains("meow"){
-        new_message.author
-        .direct_message(
-                c,
-                poise::serenity_prelude::CreateMessage::new().content(format!(
-                        "your match `meow` was satisfied on message ```\n{}\n``` {}",
-                        new_message.content.replace('`', "​`"),
-                        new_message.link()
-                )),
-        )
-        .await?;
-    }
     let m = Msg {
         author: who.clone(),
         locale: new_message.author.locale.clone().unwrap_or("unknown locale".to_string()),
@@ -321,7 +310,7 @@ impl Bot {
             std::env::var("TOKEN").unwrap_or_else(|_| read_to_string("token").expect("wher token"));
         let f = poise::Framework::builder()
             .options(poise::FrameworkOptions {
-                commands: vec![logic::run(), lb(), logic::run_file(), sorter::sorter(), sorter::mapper(), schembrowser_instructions(), lb_no_vds(), ping(), help(), scour(), search::search(), search::file(), rename(), rename_file(), render(), render_file(), render_message(), map::render_message()],
+                commands: vec![logic::run(), lb(), logic::run_file(), sorter::sorter(), sorter::mapper(), schembrowser_instructions(), lb_no_vds(), ping(), help(), scour(), search::search(), search::file(), rename(), rename_file(), render(), render_file(), render_message(), map::render_message(), stats()],
                 event_handler: |c, e, _, d| {
                     Box::pin(async move {
                         match e {
@@ -507,6 +496,7 @@ impl Bot {
                             render_message(),
                             rename(),
                             rename_file(),
+                            stats(),
                             map::render_message(),
                             logic::run_file(),
                             sorter::sorter(),
@@ -1057,5 +1047,54 @@ pub async fn schembrowser_instructions(c: Context<'_>) -> Result<()> {
             .allowed_mentions(CreateAllowedMentions::default().empty_users().empty_roles()),
     )
     .await?;
+    Ok(())
+}
+
+
+#[poise::command(
+    slash_command,
+    install_context = "Guild",
+    interaction_context = "Guild|PrivateChannel"
+)]
+/// Statistics
+#[implicit_fn::implicit_fn]
+pub async fn stats(c: Context<'_>) -> Result<()> {
+    let mut guilds = HashMap::<_, u64>::default();
+    let mut schem_calls = 0;
+    let mut map_calls = 0;
+    let mut eval_calls = 0;
+    for x in std::fs::read_to_string("data").unwrap().lines().map(serde_json::from_str::<serde_json::Value>).filter_map(Result::ok) {
+        *guilds.entry(x.get("guild").unwrap().as_u64().unwrap()).or_default() += 1;
+        let x = x.get("cname").unwrap().as_str().unwrap();
+        if x.contains("schematic"){
+            schem_calls+=1;
+        }
+        if x.contains("map") {
+            map_calls +=1;
+        }
+        if x.contains("eval") { 
+            eval_calls+=1;
+        }
+    }
+    use futures::stream;
+
+    let mut x = stream::iter(guilds.into_iter().filter(_.0 != 0).filter(_.1 > 25))
+        .map(async |(k,v)| {GuildId::new(k).to_partial_guild(c.http()).await.map(|x| (x.name, v)).unwrap_or(("DM".to_string(), v))})
+        .buffer_unordered(16).collect::<Vec<_>>().await.into_iter()
+        .map(|(a,b)| Series::new(a, vec![b as f32]))
+        .collect::<Vec<_>>();
+    x.sort_by_key(|x| x.data[0] as u64);
+
+    let mut ch = charts_rs::PieChart::new_with_theme(x, THEME_GRAFANA);
+    ch.title_text = "usage".into();
+    // ch.font_family = "Verdana".into();
+    ch.width = 800.0;
+    ch.rose_type = Some(false);
+    ch.inner_radius = 20.0;
+    ch.height = 300.0;
+
+    use emoji::named::*;
+    let x = charts_rs::svg_to_webp(&ch.svg().unwrap()).unwrap();
+    poise::send_reply(c, poise::CreateReply::default().attachment(CreateAttachment::bytes(x, "chart.webp")).content(format!("{EDIT} total schematics rendered: {schem_calls}\n{MAP} total maps rendered: {map_calls}\n{WORLD_PROCESSOR} eval calls: {eval_calls}"))).await?;    
     Ok(())
 }
