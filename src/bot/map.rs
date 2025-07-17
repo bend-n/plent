@@ -15,15 +15,13 @@ fn string((x, f): (ReadError, &str)) -> String {
             format!("not a map.")
         }
         ReadError::NoBlockFound(b) => {
-        	format!("couldnt find block `{b}`. mods are not supported")
+            format!("couldnt find block `{b}`. mods are not supported")
         }
         ReadError::NoSuchBlock(b) => {
             format!("couldnt find block at index `{b}`. mods are not supported")
         }
         ReadError::Version(v) => {
-            format!(
-                "unsupported version: `{v}`. supported versions: `7, 8`.",
-            )
+            format!("unsupported version: `{v}`. supported versions: `7, 8`.",)
         }
         ReadError::Read(r) => {
             format!("failed to read map. error: `{r}`. originates from `{f}`")
@@ -71,11 +69,13 @@ pub async fn reply(
     let (a, e) = match embed(m, deser_took).await {
         Ok(x) => x,
         Err(e) => {
-            BENDN.send_files(
-                &c,
-                [CreateAttachment::bytes(b, "map.msav")],
-                CreateMessage::new().content(format!("<@696196765564534825>　failure: {e}")),
-            );
+            BENDN
+                .send_files(
+                    &c,
+                    [CreateAttachment::bytes(b, "map.msav")],
+                    CreateMessage::new().content(format!("<@696196765564534825>　failure: {e}")),
+                )
+                .await?;
             return Ok(ControlFlow::Break(CreateReply::default().content(
                 "there was a problem. i have notified bendn about this issue.",
             )));
@@ -213,11 +213,13 @@ pub async fn render_message(c: super::Context<'_>, m: Message) -> Result<()> {
     let (png, embed) = match embed(m, deser_took).await {
         Ok(x) => x,
         Err(e) => {
-            BENDN.send_files(
-                &c,
-                [CreateAttachment::bytes(b, "map.msav")],
-                CreateMessage::new().content(format!("<@696196765564534825>　failure: {e}")),
-            );
+            BENDN
+                .send_files(
+                    &c,
+                    [CreateAttachment::bytes(b, "map.msav")],
+                    CreateMessage::new().content(format!("<@696196765564534825>　failure: {e}")),
+                )
+                .await?;
             c.say("there was a problem. i have notified bendn about this issue.")
                 .await?;
             return Ok(());

@@ -1,3 +1,5 @@
+mod data;
+mod db;
 mod logic;
 mod map;
 pub mod ownership;
@@ -5,19 +7,16 @@ pub mod repos;
 mod schematic;
 pub mod search;
 mod sorter;
-mod db;
-mod data;
 use charts_rs::{Series, THEME_GRAFANA};
 pub use data::log;
-
 
 use crate::emoji;
 use anyhow::Result;
 use dashmap::DashMap;
-use mindus::data::DataWrite;
 use mindus::Serializable;
-use poise::{serenity_prelude::*, CreateReply};
-use repos::{Repo, FORUMS, SPECIAL, THREADED};
+use mindus::data::DataWrite;
+use poise::{CreateReply, serenity_prelude::*};
+use repos::{FORUMS, Repo, SPECIAL, THREADED};
 use serenity::futures::StreamExt;
 use std::collections::{HashMap, HashSet};
 use std::fmt::Write;
@@ -134,12 +133,20 @@ pub async fn scour(
     match ty {
         Type::Basic(tg) => {
             let mut msgs = ch.messages_iter(c).boxed();
-            let tags = tags(tg);
             while let Some(msg) = msgs.next().await {
                 let Ok(msg) = msg else {
                     continue;
                 };
                 if let Ok(Some(mut x)) = schematic::from((&msg.content, &msg.attachments)).await {
+                    use emoji::to_mindustry::named::*;
+                    let tags = if tg == &["find unit factory"] {
+                        tags(&[x.block_iter().find_map(|x| match x.1.block.name() {
+                            "air-factory" => Some(AIR_FACTORY),
+                            "ground-factory" => Some(GROUND_FACTORY),
+                            "naval-factory" => Some(NAVAL_FACTORY),
+                            _ => None,
+                        }).unwrap_or(AIR_FACTORY)])
+                    } else { tags(tg) };
                     x.schem.tags.insert("labels".into(), tags.clone());
                     let who = msg.author_nick(c).await.unwrap_or(msg.author.name.clone());
                     ownership::get(repo)
@@ -167,21 +174,35 @@ pub async fn scour(
     Ok(())
 }
 
-async fn del(c: &serenity::prelude::Context,& Ch{ d:dir, repo: git, ..}: &Ch, deleted_message_id: u64) {
+async fn del(
+    c: &serenity::prelude::Context,
+    &Ch {
+        d: dir, repo: git, ..
+    }: &Ch,
+    deleted_message_id: u64,
+) {
     use crate::emoji::named::*;
-    if let Ok(s) = git.schem(dir, deleted_message_id.into()){ 
+    if let Ok(s) = git.schem(dir, deleted_message_id.into()) {
         let own = git.own().await.erase(deleted_message_id).unwrap();
         git.remove(dir, deleted_message_id.into());
         git.commit("plent", &format!("remove {deleted_message_id:x}"));
         git.push();
         if git == &repos::DESIGN_IT && !cfg!(debug_assertions) {
-            send(c,|x| x
-                .username("plent")
-                .embed(CreateEmbed::new().color(RM)
-                    .description(format!("{CANCEL} remove {} (added by {own}) (`{:x}.msch`)", emoji::mindustry::to_discord(&strip_colors(s.tags.get("name").unwrap())), deleted_message_id))
-                    .footer(CreateEmbedFooter::new("message was deleted.")
-                ))
-            ).await;
+            send(c, |x| {
+                x.username("plent").embed(
+                    CreateEmbed::new()
+                        .color(RM)
+                        .description(format!(
+                            "{CANCEL} remove {} (added by {own}) (`{:x}.msch`)",
+                            emoji::mindustry::to_discord(&strip_colors(
+                                s.tags.get("name").unwrap()
+                            )),
+                            deleted_message_id
+                        ))
+                        .footer(CreateEmbedFooter::new("message was deleted.")),
+                )
+            })
+            .await;
         };
     }
 }
@@ -189,9 +210,10 @@ async fn del(c: &serenity::prelude::Context,& Ch{ d:dir, repo: git, ..}: &Ch, de
 static HOOK: OnceLock<Webhook> = OnceLock::new();
 
 pub async fn hookup(c: &impl AsRef<Http>) {
-    let v = Webhook::from_url(c, 
+    let v = Webhook::from_url(
+        c,
         &std::env::var("WEBHOOK")
-            .unwrap_or_else(|_| read_to_string("webhook").expect("wher webhook"))
+            .unwrap_or_else(|_| read_to_string("webhook").expect("wher webhook")),
     )
     .await
     .unwrap();
@@ -230,9 +252,13 @@ async fn handle_message(
     let (dir, l, repo) = sep(SPECIAL.get(&new_message.channel_id.get()).or(post.as_ref()));
     let m = Msg {
         author: who.clone(),
-        locale: new_message.author.locale.clone().unwrap_or("unknown locale".to_string()),
+        locale: new_message
+            .author
+            .locale
+            .clone()
+            .unwrap_or("unknown locale".to_string()),
         author_id: new_message.author.id.get(),
-        guild: new_message.guild_id.map_or(0,Into::into),
+        guild: new_message.guild_id.map_or(0, Into::into),
         avatar: new_message.author.face(),
         attachments: new_message.attachments.clone(),
         content: new_message.content.clone(),
@@ -510,6 +536,7 @@ impl Bot {
                         925674713429184564.into(),
                     )
                     .await?;
+                    poise::builtins::register_in_guild(ctx, &[scour()], 1388427745066750045.into()).await?;
                     println!("registered");
                     let tracker = Arc::new(DashMap::new());
                     let tc = Arc::clone(&tracker);
@@ -869,10 +896,10 @@ pub fn png(p: fimg::Image<Vec<u8>, 3>) -> Vec<u8> {
 )]
 /// Pong!
 pub async fn ping(c: Context<'_>) -> Result<()> {
-	// let p = Timestamp::now()
-	//     .signed_duration_since(*c.created_at())
-	//     .to_std()?
-	//     .as_millis() as _;
+    // let p = Timestamp::now()
+    //     .signed_duration_since(*c.created_at())
+    //     .to_std()?
+    //     .as_millis() as _;
     log(&c);
     use emoji::named::*;
     let m = memory_stats::memory_stats().unwrap().physical_mem as f32 / (1 << 20) as f32;
@@ -906,19 +933,13 @@ pub async fn ping(c: Context<'_>) -> Result<()> {
 /// Renders base64 schematic.
 pub async fn render(c: Context<'_>, #[description = "schematic, base64"] s: String) -> Result<()> {
     log(&c);
-    poise::send_reply(c,
-    match schematic::from_b64(&s) {
-        Ok(s) => 
-            schematic::reply(
-                s,
-                &c.author().name,
-                &c.author().face(),
-            )
-            .await?,
-        Err(e) => 
-            CreateReply::default()
-                .content(format!("schem broken / not schem: {e}")),
-    })
+    poise::send_reply(
+        c,
+        match schematic::from_b64(&s) {
+            Ok(s) => schematic::reply(s, &c.author().name, &c.author().face()).await?,
+            Err(e) => CreateReply::default().content(format!("schem broken / not schem: {e}")),
+        },
+    )
     .await?;
     Ok(())
 }
@@ -940,7 +961,7 @@ pub async fn render_file(
         match map::reply(c, &s).await? {
             ControlFlow::Break(x) => return Ok(drop(poise::send_reply(c, x).await?)),
             ControlFlow::Continue(e) if e != "not a map." => {
-                return Ok(drop(poise::say_reply(c, e).await?))
+                return Ok(drop(poise::say_reply(c, e).await?));
             }
             ControlFlow::Continue(_) => (),
         };
@@ -955,12 +976,7 @@ pub async fn render_file(
     };
     poise::send_reply(
         c,
-        schematic::reply(
-            s,
-            &c.author().name,
-            &c.author().face(),
-        )
-        .await?,
+        schematic::reply(s, &c.author().name, &c.author().face()).await?,
     )
     .await?;
     Ok(())
@@ -968,39 +984,51 @@ pub async fn render_file(
 
 #[poise::command(slash_command)]
 /// Rename a schematic.
-async fn rename_file(c: Context<'_>, #[description = "schematic, msch"] s: Attachment, #[description = "new name"] name:String) -> Result<()> {
+async fn rename_file(
+    c: Context<'_>,
+    #[description = "schematic, msch"] s: Attachment,
+    #[description = "new name"] name: String,
+) -> Result<()> {
     log(&c);
-    let Some(schematic::Schem{schem: mut s}) = schematic::from_attachments(std::slice::from_ref(&s)).await? else {
+    let Some(schematic::Schem { schem: mut s }) =
+        schematic::from_attachments(std::slice::from_ref(&s)).await?
+    else {
         c.reply("no schem!").await?;
         return Ok(());
     };
     s.tags.insert("name".to_string(), name);
-    let mut o= DataWrite::default();
+    let mut o = DataWrite::default();
     s.serialize(&mut o)?;
-    poise::send_reply(c, CreateReply::default().attachment(
-        CreateAttachment::bytes(o.consume(),"out.msch")
-    )).await?;
+    poise::send_reply(
+        c,
+        CreateReply::default().attachment(CreateAttachment::bytes(o.consume(), "out.msch")),
+    )
+    .await?;
     Ok(())
 }
-
 
 #[poise::command(slash_command)]
 /// Rename a schematic.
-async fn rename(c: Context<'_>, #[description = "schematic, base64"] s: String, #[description = "new name"] name:String) -> Result<()> {
-    log(&c);let Ok(schematic::Schem{schem: mut s}) = schematic::from_b64(&*s) else {
+async fn rename(
+    c: Context<'_>,
+    #[description = "schematic, base64"] s: String,
+    #[description = "new name"] name: String,
+) -> Result<()> {
+    log(&c);
+    let Ok(schematic::Schem { schem: mut s }) = schematic::from_b64(&*s) else {
         c.reply("no schem!").await?;
         return Ok(());
     };
     s.tags.insert("name".to_string(), name);
-    let mut o= DataWrite::default();
+    let mut o = DataWrite::default();
     s.serialize(&mut o)?;
-    poise::send_reply(c, CreateReply::default().attachment(
-        CreateAttachment::bytes(o.consume(),"out.msch")
-    )).await?;
+    poise::send_reply(
+        c,
+        CreateReply::default().attachment(CreateAttachment::bytes(o.consume(), "out.msch")),
+    )
+    .await?;
     Ok(())
 }
-
-
 
 #[poise::command(
     context_menu_command = "Render schematic",
@@ -1009,25 +1037,25 @@ async fn rename(c: Context<'_>, #[description = "schematic, base64"] s: String, 
 )]
 /// Renders schematic inside a message.
 pub async fn render_message(c: Context<'_>, m: Message) -> Result<()> {
-    log(&c);poise::send_reply(
-        c, match schematic::from((&m.content, &m.attachments)).await {
-        Ok(Some(s)) =>
-            schematic::reply(
-                s,
-                &m.author_nick(c)
-                    .await
-                    .unwrap_or_else(|| m.author.name.clone()),
-                &m.author.face(),
-            )
-            .await?,
-        Err(e) => 
-            CreateReply::default()
-                .content(format!("schematic error {e}")),
-        Ok(None) => 
-            CreateReply::default()
+    log(&c);
+    poise::send_reply(
+        c,
+        match schematic::from((&m.content, &m.attachments)).await {
+            Ok(Some(s)) => {
+                schematic::reply(
+                    s,
+                    &m.author_nick(c)
+                        .await
+                        .unwrap_or_else(|| m.author.name.clone()),
+                    &m.author.face(),
+                )
+                .await?
+            }
+            Err(e) => CreateReply::default().content(format!("schematic error {e}")),
+            Ok(None) => CreateReply::default()
                 .content("no schem found")
-                .ephemeral(true)
-        }
+                .ephemeral(true),
+        },
     )
     .await?;
     Ok(())
@@ -1035,12 +1063,13 @@ pub async fn render_message(c: Context<'_>, m: Message) -> Result<()> {
 
 #[poise::command(
     slash_command,
-    install_context = "Guild",
+    install_context = "Guild|User",
     interaction_context = "Guild|PrivateChannel"
 )]
 /// Instructions on adding a schematic repository to YOUR server!
 pub async fn schembrowser_instructions(c: Context<'_>) -> Result<()> {
-    log(&c);poise::send_reply(
+    log(&c);
+    poise::send_reply(
         c,
         poise::CreateReply::default()
             .content(include_str!("repo.md"))
@@ -1050,12 +1079,7 @@ pub async fn schembrowser_instructions(c: Context<'_>) -> Result<()> {
     Ok(())
 }
 
-
-#[poise::command(
-    slash_command,
-    install_context = "Guild",
-    interaction_context = "Guild|PrivateChannel"
-)]
+#[poise::command(slash_command)]
 /// Statistics
 #[implicit_fn::implicit_fn]
 pub async fn stats(c: Context<'_>) -> Result<()> {
@@ -1063,25 +1087,41 @@ pub async fn stats(c: Context<'_>) -> Result<()> {
     let mut schem_calls = 0;
     let mut map_calls = 0;
     let mut eval_calls = 0;
-    for x in std::fs::read_to_string("data").unwrap().lines().map(serde_json::from_str::<serde_json::Value>).filter_map(Result::ok) {
-        *guilds.entry(x.get("guild").unwrap().as_u64().unwrap()).or_default() += 1;
+    for x in std::fs::read_to_string("data")
+        .unwrap()
+        .lines()
+        .map(serde_json::from_str::<serde_json::Value>)
+        .filter_map(Result::ok)
+    {
+        *guilds
+            .entry(x.get("guild").unwrap().as_u64().unwrap())
+            .or_default() += 1;
         let x = x.get("cname").unwrap().as_str().unwrap();
-        if x.contains("schematic"){
-            schem_calls+=1;
+        if x.contains("schematic") {
+            schem_calls += 1;
         }
         if x.contains("map") {
-            map_calls +=1;
+            map_calls += 1;
         }
-        if x.contains("eval") { 
-            eval_calls+=1;
+        if x.contains("eval") {
+            eval_calls += 1;
         }
     }
     use futures::stream;
 
     let mut x = stream::iter(guilds.into_iter().filter(_.0 != 0).filter(_.1 > 25))
-        .map(async |(k,v)| {GuildId::new(k).to_partial_guild(c.http()).await.map(|x| (x.name, v)).unwrap_or(("DM".to_string(), v))})
-        .buffer_unordered(16).collect::<Vec<_>>().await.into_iter()
-        .map(|(a,b)| Series::new(a, vec![b as f32]))
+        .map(async |(k, v)| {
+            GuildId::new(k)
+                .to_partial_guild(c.http())
+                .await
+                .map(|x| (x.name, v))
+                .unwrap_or(("DM".to_string(), v))
+        })
+        .buffer_unordered(16)
+        .collect::<Vec<_>>()
+        .await
+        .into_iter()
+        .map(|(a, b)| Series::new(a, vec![b as f32]))
         .collect::<Vec<_>>();
     x.sort_by_key(|x| x.data[0] as u64);
 
@@ -1095,6 +1135,6 @@ pub async fn stats(c: Context<'_>) -> Result<()> {
 
     use emoji::named::*;
     let x = charts_rs::svg_to_webp(&ch.svg().unwrap()).unwrap();
-    poise::send_reply(c, poise::CreateReply::default().attachment(CreateAttachment::bytes(x, "chart.webp")).content(format!("{EDIT} total schematics rendered: {schem_calls}\n{MAP} total maps rendered: {map_calls}\n{WORLD_PROCESSOR} eval calls: {eval_calls}"))).await?;    
+    poise::send_reply(c, poise::CreateReply::default().attachment(CreateAttachment::bytes(x, "chart.webp")).content(format!("{EDIT} total schematics rendered: {schem_calls}\n{MAP} total maps rendered: {map_calls}\n{WORLD_PROCESSOR} eval calls: {eval_calls}"))).await?;
     Ok(())
 }

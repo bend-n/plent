@@ -67,48 +67,56 @@ impl Repo {
     }
 
     pub fn remove(&self, dir: &str, x: MessageId) {
-        assert!(std::process::Command::new("git")
-            .current_dir(self.repopath())
-            .arg("rm")
-            .arg("-q")
-            .arg("-f")
-            .arg(self.gpath(dir, x))
-            .status()
-            .unwrap()
-            .success());
+        assert!(
+            std::process::Command::new("git")
+                .current_dir(self.repopath())
+                .arg("rm")
+                .arg("-q")
+                .arg("-f")
+                .arg(self.gpath(dir, x))
+                .status()
+                .unwrap()
+                .success()
+        );
     }
 
     pub fn pull(&self) {
-        assert!(std::process::Command::new("git")
-            .current_dir(self.repopath())
-            .arg("pull")
-            .arg("-q")
-            .status()
-            .unwrap()
-            .success());
+        assert!(
+            std::process::Command::new("git")
+                .current_dir(self.repopath())
+                .arg("pull")
+                .arg("-q")
+                .status()
+                .unwrap()
+                .success()
+        );
     }
 
     pub fn commit(&self, by: &str, msg: &str) {
-        assert!(std::process::Command::new("git")
-            .current_dir(self.repopath())
-            .args(["commit", "--no-gpg-sign", "-q", "--author"])
-            .arg(format!("{by} <@designit>"))
-            .arg("-m")
-            .arg(msg)
-            .status()
-            .unwrap()
-            .success());
+        assert!(
+            std::process::Command::new("git")
+                .current_dir(self.repopath())
+                .args(["commit", "--no-gpg-sign", "-q", "--author"])
+                .arg(format!("{by} <@designit>"))
+                .arg("-m")
+                .arg(msg)
+                .status()
+                .unwrap()
+                .success()
+        );
     }
 
     pub fn push(&self) {
         #[cfg(not(debug_assertions))]
-        assert!(std::process::Command::new("git")
-            .current_dir(self.repopath())
-            .arg("push")
-            .arg("-q")
-            .status()
-            .unwrap()
-            .success())
+        assert!(
+            std::process::Command::new("git")
+                .current_dir(self.repopath())
+                .arg("push")
+                .arg("-q")
+                .status()
+                .unwrap()
+                .success()
+        )
     }
 
     pub fn write(&self, dir: &str, x: MessageId, s: Schem) {
@@ -120,13 +128,15 @@ impl Repo {
     }
 
     pub fn add(&self) {
-        assert!(std::process::Command::new("git")
-            .current_dir(self.repopath())
-            .arg("add")
-            .arg(".")
-            .status()
-            .unwrap()
-            .success());
+        assert!(
+            std::process::Command::new("git")
+                .current_dir(self.repopath())
+                .arg("add")
+                .arg(".")
+                .status()
+                .unwrap()
+                .success()
+        );
     }
 }
 
@@ -197,6 +207,11 @@ repos! {
         chief: 705503407179431937,
         deny_emoji: 1192388789952319499u64,
     },
+    EVICT => {
+        admins: &[person!(&1394078459940175963), person!(&1389145164299243520)],
+        chief: 954347786193747968,
+        deny_emoji: 1395478597451518085u64,
+    }
 }
 
 decl! {
@@ -271,6 +286,34 @@ forum 1297463616035098654u64 => "e-units"
 ACP => [
         1276759410722738186u64 => "schems": ["plague"]
     ];
+EVICT => [
+1394340637758722048u64 => "t1" : ["find unit factory"],
+1394340696227319808u64 => "t2" : [ADDITIVE_RECONSTRUCTOR],
+1394340759297065252u64 => "t3" : [MULTIPLICATIVE_RECONSTRUCTOR],
+1394340939685953656u64 => "t4" : [EXPONENTIAL_RECONSTRUCTOR],
+1394340961550729237u64 => "t5" : [TETRATIVE_RECONSTRUCTOR],
+1394418354634362910u64 => "combustion-gen" : [COMBUSTION_GENERATOR],
+1394418605461999769u64 => "differential-gen" : [DIFFERENTIAL_GENERATOR],
+1394418707257626795u64 => "impact-reactor" : [IMPACT_REACTOR],
+1394418470430707712u64 => "steam-gen" : [STEAM_GENERATOR],
+1394418672755282040u64 => "thorium-reactor" : [THORIUM_REACTOR],
+1394412929587347556u64 => "coal" : [COAL],
+1394081205024063529u64 => "graphite" : [GRAPHITE],
+1394081280978583624u64 => "meta" : [METAGLASS],
+1394081566950424577u64 => "phase" : [PHASEFABRIC],
+1394081445781176493u64 => "plast" : [PLASTANIUM],
+1394341640105103400u64 => "resource-mix" : [ROUTER],
+1394081152611913918u64 => "silicon" : [SILICON],
+1394081607991820368u64 => "surge" : [SURGEALLOY],
+1394342304021741672u64 => "miners" : [BLAST_DRILL],
+1394342482027745351u64 => "scrap-schematics" : [SCRAP],
+1394335945074933901u64 => "cyclone" : [CYCLONE],
+1394083007245320244u64 => "fuse" : [FUSE],
+1394083227001557034u64 => "hail-scorch" : [HAIL, SCORCH],
+1394082982733680722u64 => "scatter": [SCATTER],
+1394335981691211806u64 => "swarmer": [SWARMER],
+1394414493957881906u64 => "miscellaneous" : [NEOPLASM]
+    ];
 }
 
 macro_rules! chief {
@@ -279,7 +322,7 @@ macro_rules! chief {
             .get(&$c.channel_id().get())
             .ok_or(anyhow::anyhow!("not repo"))?
             .repo;
-        if repo.chief != $c.author().id.get() {
+        if repo.chief != $c.author().id.get() && $c.author().id.get() != OWNER {
             poise::send_reply(
                 $c,
                 poise::CreateReply::default()

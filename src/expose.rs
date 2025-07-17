@@ -1,9 +1,9 @@
 use axum::{
+    Router, Server as AxumServer,
     extract::Path,
-    http::{header::*, StatusCode},
+    http::{StatusCode, header::*},
     response::{AppendHeaders, Html},
     routing::get,
-    Router, Server as AxumServer,
 };
 
 use std::{net::SocketAddr, sync::LazyLock, time::SystemTime};

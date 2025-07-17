@@ -2,16 +2,16 @@ use crate::emoji;
 use anyhow::Result;
 use base64::Engine;
 use logos::Logos;
-use mindus::data::schematic::R64Error;
 use mindus::data::DataRead;
+use mindus::data::schematic::R64Error;
 use mindus::*;
-use poise::{serenity_prelude::*, CreateReply};
+use poise::{CreateReply, serenity_prelude::*};
 use regex::Regex;
 use std::ops::ControlFlow;
 use std::sync::LazyLock;
 use std::{fmt::Write, ops::Deref};
 
-use super::{strip_colors, Msg, SUCCESS};
+use super::{Msg, SUCCESS, strip_colors};
 
 static RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?").unwrap()
@@ -153,7 +153,19 @@ pub async fn with(
         "guild":  m.guild,
         "channel": m.channel.get(),
         }});
-        if let Some(x) = labels {
+        if let Some(mut x) = labels {
+            if x.contains("find unit factory") {
+                use emoji::to_mindustry::named::*;
+                x = super::tags(&[v
+                    .block_iter()
+                    .find_map(|x| match x.1.block.name() {
+                        "air-factory" => Some(AIR_FACTORY),
+                        "ground-factory" => Some(GROUND_FACTORY),
+                        "naval-factory" => Some(NAVAL_FACTORY),
+                        _ => None,
+                    })
+                    .unwrap_or(AIR_FACTORY)]);
+            }
             v.schem.tags.insert("labels".into(), x);
         };
         return Ok(ControlFlow::Break(send(m, c, v).await?));

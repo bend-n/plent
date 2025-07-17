@@ -1,6 +1,6 @@
 use super::{Context, Result};
 use lemu::Executor;
-use poise::{serenity_prelude::*, CodeBlock, KeyValueArgs};
+use poise::{CodeBlock, KeyValueArgs, serenity_prelude::*};
 
 #[poise::command(slash_command, rename = "eval_file", install_context = "Guild|User")]
 /// Execute MLOG from a file.
