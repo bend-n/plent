@@ -21,13 +21,16 @@ fn string((x, f): (ReadError, &str)) -> String {
             format!("couldnt find block at index `{b}`. mods are not supported")
         }
         ReadError::Version(v) => {
-            format!("unsupported version: `{v}`. supported versions: `7, 8`.",)
+            format!("unsupported version: `{v}`. supported versions: `7-11`.",)
         }
         ReadError::Read(r) => {
             format!("failed to read map. error: `{r}`. originates from `{f}`")
         }
         ReadError::ReadState(r) => {
             format!("failed to read dyn data in map. error: `{r}`. originates from `{f}`")
+        }
+        ReadError::NoBlockWithData => {
+            format!("no block with data")
         }
     }
 }

@@ -1,3 +1,4 @@
+use crate::bot::repos;
 use crate::emoji;
 use anyhow::Result;
 use base64::Engine;
@@ -58,24 +59,7 @@ pub async fn reply(v: Schem, author: &str, avatar: &str) -> Result<CreateReply> 
     println!("rend {name}");
     Ok(CreateReply::default()
         .attachment(CreateAttachment::bytes(p, "image.png"))
-        .embed({
-            let mut e = CreateEmbed::new()
-                .attachment("image.png")
-                .author(CreateEmbedAuthor::new(author).icon_url(avatar));
-            if let Some(tags) = tags(&v) {
-                e = e.field("tags", tags, true);
-            }
-            if let Some(v) = v
-                .tags
-                .get("description")
-                .map(|t| emoji::mindustry::to_discord(&strip_colors(t)))
-            {
-                e = e.description(v);
-            }
-            e.field("req", cost(&v), true)
-                .title(name.clone())
-                .color(SUCCESS)
-        }))
+        .embed(e(author, avatar, &v).title(name)))
 }
 
 fn tags(v: &Schem) -> Option<String> {
@@ -99,6 +83,30 @@ fn cost(v: &Schem) -> String {
     s
 }
 
+fn e(author: &str, avatar: &str, v: &Schem) -> CreateEmbed {
+    let mut e = CreateEmbed::new()
+        .attachment("image.png")
+        .author(CreateEmbedAuthor::new(author).icon_url(avatar));
+    if let Some(tags) = tags(&v) {
+        e = e.field("tags", tags, true);
+    }
+    if let Some(v) = v
+        .tags
+        .get("description")
+        .map(|t| emoji::mindustry::to_discord(&strip_colors(t)))
+    {
+        e = e.description(v);
+    }
+    let f = if v.width == v.height {
+        format!("{}²={}", v.width, v.width * v.height)
+    } else {
+        format!("{}×{}={}", v.height, v.width, v.width * v.height)
+    };
+    e.field("req", cost(&v), true)
+        .footer(CreateEmbedFooter::new(f))
+        .color(SUCCESS)
+}
+
 pub async fn send(
     m: Msg,
     c: &serenity::client::Context,
@@ -111,30 +119,7 @@ pub async fn send(
     println!("rend {name}");
     let msg = CreateMessage::new()
         .add_file(CreateAttachment::bytes(p, "image.png"))
-        .embed({
-            let mut e = CreateEmbed::new()
-                .attachment("image.png")
-                .author(CreateEmbedAuthor::new(m.author).icon_url(m.avatar));
-            if let Some(tags) = tags(&v) {
-                e = e.field("tags", tags, true);
-            }
-            if let Some(v) = v
-                .tags
-                .get("description")
-                .map(|t| emoji::mindustry::to_discord(&strip_colors(t)))
-            {
-                e = e.description(v);
-            }
-            let f = if v.width == v.height {
-                format!("{}²={}", v.width, v.width * v.height)
-            } else {
-                format!("{}×{}={}", v.height, v.width, v.width * v.height)
-            };
-            e.field("req", cost(&v), true)
-                .title(name.clone())
-                .footer(CreateEmbedFooter::new(f))
-                .color(SUCCESS)
-        });
+        .embed(e(&m.author, &m.avatar, &v).title(name.clone()));
     let h = m.channel.send_message(c, msg).await?;
     Ok((h, name, v))
 }
@@ -142,7 +127,7 @@ pub async fn send(
 pub async fn with(
     m: Msg,
     c: &serenity::client::Context,
-    labels: Option<String>,
+    labels: Option<super::Type>,
 ) -> Result<ControlFlow<(Message, String, Schem), ()>> {
     if let Ok(Some(mut v)) = from((&m.content, &m.attachments)).await {
         super::data::push_j(serde_json::json! {{
@@ -153,10 +138,21 @@ pub async fn with(
         "guild":  m.guild,
         "channel": m.channel.get(),
         }});
-        if let Some(mut x) = labels {
-            if x.contains("find unit factory") {
-                use emoji::to_mindustry::named::*;
-                x = super::tags(&[v
+        if let Some(super::Type::Basic(x)) = labels {
+            use emoji::to_mindustry::named::*;
+            let x = if let Some(i) = x.iter().position(|x| x == &repos::L) {
+                let mut x = x.to_vec();
+                if v.block_iter().any(|x| {
+                    x.1.block == &mindus::block::ADVANCED_LAUNCH_PAD
+                        || x.1.block == &mindus::block::LAUNCH_PAD
+                }) {
+                    x[i] = ADVANCED_LAUNCH_PAD;
+                } else {
+                    x.remove(i);
+                }
+                super::tags(&x)
+            } else if x.contains(&"find unit factory") {
+                super::tags(&[v
                     .block_iter()
                     .find_map(|x| match x.1.block.name() {
                         "air-factory" => Some(AIR_FACTORY),
@@ -164,8 +160,10 @@ pub async fn with(
                         "naval-factory" => Some(NAVAL_FACTORY),
                         _ => None,
                     })
-                    .unwrap_or(AIR_FACTORY)]);
-            }
+                    .unwrap_or(AIR_FACTORY)])
+            } else {
+                super::tags(x)
+            };
             v.schem.tags.insert("labels".into(), x);
         };
         return Ok(ControlFlow::Break(send(m, c, v).await?));
@@ -180,22 +178,18 @@ pub fn to_png(s: &Schematic) -> Vec<u8> {
 
 pub async fn from(m: (&str, &[Attachment])) -> Result<Option<Schem>> {
     match from_msg(m.0) {
-        x @ Ok(Some(_)) => x,
+        x @ Ok(Some(_)) => Ok(x?),
         // .or
         _ => from_attachments(m.1).await,
     }
 }
 
-pub fn from_msg(msg: &str) -> Result<Option<Schem>> {
-    let schem_text = match RE
-        .captures_iter(msg)
+pub fn from_msg(msg: &str) -> Result<Option<Schem>, R64Error> {
+    RE.captures_iter(msg)
         .map(|x| x.get(0).unwrap().as_str())
         .find(|x| x.starts_with("bXNjaA"))
-    {
-        None => return Ok(None),
-        Some(x) => x,
-    };
-    Ok(Some(from_b64(schem_text)?))
+        .map(from_b64)
+        .transpose()
 }
 
 pub fn from_b64(schem_text: &str) -> std::result::Result<Schem, R64Error> {
@@ -219,6 +213,11 @@ fn decode_tags(tags: &str) -> Vec<String> {
     let mut next = || lexer.find_map(|x| x.ok());
     assert_eq!(next().unwrap(), Tokens::Open);
     while let Some(Tokens::String(x)) = next() {
+        let x = match x.trim() {
+            super::repos::SRP => "<:serpulo:1395767515950612593>",
+            super::repos::ERE => "<:erekir:1395767762957369484>",
+            _ => x,
+        };
         t.push(emoji::mindustry::to_discord(x));
     }
     assert_eq!(lexer.next(), None);

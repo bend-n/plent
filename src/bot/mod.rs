@@ -18,6 +18,7 @@ use mindus::data::DataWrite;
 use poise::{CreateReply, serenity_prelude::*};
 use repos::{FORUMS, Repo, SPECIAL, THREADED};
 use serenity::futures::StreamExt;
+use core::panic;
 use std::collections::{HashMap, HashSet};
 use std::fmt::Write;
 use std::fs::read_to_string;
@@ -55,7 +56,7 @@ pub struct Data {
     // message -> resp
     tracker: Arc<DashMap<MessageId, Message>>,
 }
-
+#[derive(Clone)]
 pub struct Msg {
     avatar: String,
     author: String,
@@ -100,18 +101,24 @@ pub struct Ch {
 #[derive(Clone, Debug)]
 enum Type {
     Basic(&'static [&'static str]),
-    Assembled(String),
+    Owned(Vec<String>),
     Forum(()), // &'static phf::Map<&'static str, &'static [&'static str]>
 }
-
-fn sep(x: Option<&Ch>) -> (Option<&'static str>, Option<String>, Option<&Repo>) {
-    (
-        x.map(|x| x.d),
-        x.and_then(|x| match x.ty.clone() {
+impl Type {
+    fn r(&self) -> Option<String> {
+     match self {
             Type::Basic(x) => Some(tags(x)),
             Type::Forum(_) => None,
-            Type::Assembled(x) => Some(x),
-        }),
+            Type::Owned(x) => Some(tags(x)),
+        }
+
+    }
+}
+
+fn sep(x: Option<&Ch>) -> (Option<&'static str>, Option<Type>, Option<&Repo>) {
+    (
+        x.map(|x| x.d),
+        x.map(|x| x.ty.clone()),
         x.map(|x| x.repo),
     )
 }
@@ -153,7 +160,7 @@ pub async fn scour(
                         .await
                         .insert(msg.id.get(), (msg.author.name.clone(), msg.author.id.get()));
                     repo.write(d, msg.id, x);
-                    repo.commit(&who, &format!("add {:x}.msch", msg.id.get()));
+                    repo.commit(&who, msg.author.id, &format!("add {:x}.msch", msg.id.get()));
                     msg.react(c, emojis::get!(MERGE)).await?;
                     n += 1;
                 }
@@ -185,7 +192,7 @@ async fn del(
     if let Ok(s) = git.schem(dir, deleted_message_id.into()) {
         let own = git.own().await.erase(deleted_message_id).unwrap();
         git.remove(dir, deleted_message_id.into());
-        git.commit("plent", &format!("remove {deleted_message_id:x}"));
+        git.commit("plent", 0u64, &format!("remove {deleted_message_id:x}"));
         git.push();
         if git == &repos::DESIGN_IT && !cfg!(debug_assertions) {
             send(c, |x| {
@@ -264,7 +271,20 @@ async fn handle_message(
         content: new_message.content.clone(),
         channel: new_message.channel_id,
     };
-    let x = schematic::with(m, c, l).await?;
+    let mut x = ControlFlow::Continue(());
+    for m_ in &new_message.message_snapshots {
+        let m = Msg {
+            content: m_.content.clone(),
+            attachments: m_.attachments.clone(),
+            ..m.clone()
+        };
+        if x.is_continue() {
+            x = schematic::with(m, c, l.clone()).await?;
+        };
+    }
+    if x.is_continue() {
+        x = schematic::with(m, c, l).await?;
+    }
     match x {
         ControlFlow::Continue(())
             if THREADED.contains(&new_message.channel_id.get())
@@ -310,7 +330,7 @@ async fn handle_message(
                 }
                 repo.write(dir, new_message.id, s);
                 repo.add();
-                repo.commit(&who, &format!("add {:x}.msch", new_message.id.get()));
+                repo.commit(&who, new_message.author.id, &format!("add {:x}.msch", new_message.id.get()));
                 repo.push();
                 new_message.react(c, emojis::get!(MERGE)).await?;
             }
@@ -336,7 +356,28 @@ impl Bot {
             std::env::var("TOKEN").unwrap_or_else(|_| read_to_string("token").expect("wher token"));
         let f = poise::Framework::builder()
             .options(poise::FrameworkOptions {
-                commands: vec![logic::run(), lb(), logic::run_file(), sorter::sorter(), sorter::mapper(), schembrowser_instructions(), lb_no_vds(), ping(), help(), scour(), search::search(), search::file(), rename(), rename_file(), render(), render_file(), render_message(), map::render_message(), stats()],
+                commands: vec![
+                    logic::run(),
+                    lb(),
+                    logic::run_file(),
+                    sorter::sorter(),
+                    sorter::mapper(),
+                    schembrowser_instructions(),
+                    lb_no_vds(),
+                    ping(),
+                    help(),
+                    scour(),
+                    search::search(),
+                    search::file(),
+                    rename(),
+                    rename_file(),
+                    render(),
+                    render_file(),
+                    render_message(),
+                    map::render_message(),
+                    stats(),
+                    retag()
+                ],
                 event_handler: |c, e, _, d| {
                     Box::pin(async move {
                         match e {
@@ -394,7 +435,7 @@ impl Bot {
                                     let who = nick.as_deref().unwrap_or(&user.name);
                                     let own = ownership::get(git).await.erase(*message_id).unwrap();
                                     git.remove(dir, *message_id);
-                                    git.commit(who, &format!("remove {:x}.msch", message_id.get()));
+                                    git.commit(who,  m.author.id, &format!("remove {:x}.msch", message_id.get()));
                                     git.push();
                                     _ = m.delete_reaction(c,Some(1174262682573082644.into()), emojis::get!(MERGE)).await;
                                     m.delete_reaction(c,Some(1174262682573082644.into()), ReactionType::Custom { animated: false, id: 1192316518395039864.into(), name: Some("merge".into()) }).await.unwrap();
@@ -424,7 +465,7 @@ impl Bot {
                                 .filter(|x| {
                                     thread.applied_tags.contains(&x.id)
                                 }).map(|x| x.name.clone()).collect::<Vec<_>>();
-                                EXTRA.insert(thread.id.get(), Ch { repo, d, ty: Type::Assembled(tags(&*tg)) });   
+                                EXTRA.insert(thread.id.get(), Ch { repo, d, ty: Type::Owned(tg) });   
                             }
                             FullEvent::MessageUpdate {event: MessageUpdateEvent {
                                 author: Some(author),
@@ -470,7 +511,7 @@ impl Bot {
                                             ).await;
                                         }
                                             git.write(dir, *id, s);
-                                            git.commit(&who,&format!("update {:x}.msch", id.get()));
+                                            git.commit(&who, author.id, &format!("update {:x}.msch", id.get()));
                                             git.push();
                                         }
                                     }
@@ -532,7 +573,7 @@ impl Bot {
                     .await?;
                     poise::builtins::register_in_guild(
                         ctx,
-                        &[search::search(), lb(), lb_no_vds(), search::file()],
+                        &[search::search(), lb(), lb_no_vds(), search::file(), retag()],
                         925674713429184564.into(),
                     )
                     .await?;
@@ -602,24 +643,28 @@ impl Bot {
 //     Ok(())
 // }
 
-// #[poise::command(slash_command)]
-// pub async fn retag(c: Context<'_>, channel: ChannelId) -> Result<()> {
-//     if c.author().id != OWNER {
-//         poise::say_reply(c, "access denied. this incident will be reported").await?;
-//         return Ok(());
-//     }
-//     c.defer().await?;
-//     let tags = tags(SPECIAL[&channel.get()].labels);
-//     for schem in search::dir(channel.get()).unwrap() {
-//         let mut s = search::load(&schem);
-//         let mut v = DataWrite::default();
-//         s.tags.insert("labels".into(), tags.clone());
-//         s.serialize(&mut v)?;
-//         std::fs::write(schem, v.consume())?;
-//     }
-//     c.reply(emoji::named::OK).await?;
-//     Ok(())
-// }
+#[poise::command(slash_command)]
+pub async fn retag(c: Context<'_>) -> Result<()> {
+    if c.author().id != OWNER {
+        poise::say_reply(c, "access denied. this incident will be reported").await?;
+        return Ok(());
+    }
+    c.defer().await?;
+    for (&channel, x) in repos::SPECIAL.into_iter().filter(|x| {
+        x.1.repo == &repos::DESIGN_IT
+    }) { 
+        let (_, Some(tags), _) = sep(Some(x)) else { panic!() };
+        let Some(tags) = tags.r() else { panic!() };
+    for schem in search::dir(channel).into_iter().flatten() {
+        let mut s = search::load(&schem);
+        let mut v = DataWrite::default();
+        s.tags.insert("labels".into(), tags.clone());
+        s.serialize(&mut v)?;
+        std::fs::write(schem, v.consume())?;
+    }}
+    c.reply(emoji::named::OK).await?;
+    Ok(())
+}
 
 // dbg!(m
 //     .iter()
@@ -927,7 +972,7 @@ pub async fn ping(c: Context<'_>) -> Result<()> {
 
 #[poise::command(
     slash_command,
-    install_context = "User",
+    install_context = "User|Guild",
     interaction_context = "Guild|BotDm|PrivateChannel"
 )]
 /// Renders base64 schematic.
@@ -946,7 +991,7 @@ pub async fn render(c: Context<'_>, #[description = "schematic, base64"] s: Stri
 
 #[poise::command(
     slash_command,
-    install_context = "User",
+    install_context = "User|Guild",
     interaction_context = "Guild|BotDm|PrivateChannel"
 )]
 /// Renders map/msch schematic.
@@ -1032,7 +1077,7 @@ async fn rename(
 
 #[poise::command(
     context_menu_command = "Render schematic",
-    install_context = "User",
+    install_context = "User|Guild",
     interaction_context = "Guild|PrivateChannel"
 )]
 /// Renders schematic inside a message.

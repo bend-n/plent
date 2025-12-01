@@ -123,7 +123,7 @@ pub struct Data {
 pub fn dir(x: u64) -> Option<impl Iterator<Item = PathBuf>> {
     std::fs::read_dir(
         Path::new("repos")
-            .join("cd8a83f57821034")
+            .join("DESIGN_IT")
             .join(super::SPECIAL[&x].d),
     )
     .ok()

@@ -63,7 +63,11 @@ sled = { version = "0.34.7", features = ["compression"] }
 remapper = { version = "0.1.0", path = "../remapper" }
 implicit-fn = "0.1.0"
 sql = "0.4.3"
-charts-rs = { version = "0.3.24", features = ["image", "image-encoder", "resvg"] }
+charts-rs = { version = "0.3.24", features = [
+  "image",
+  "image-encoder",
+  "resvg",
+] }
 
 [features]
 server = ["axum"]
