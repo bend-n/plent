@@ -279,10 +279,12 @@ async fn handle_message(
             ..m.clone()
         };
         if x.is_continue() {
+            println!("schematic with; forward");
             x = schematic::with(m, c, l.clone()).await?;
         };
     }
     if x.is_continue() {
+        println!("schematic with; attached");
         x = schematic::with(m, c, l).await?;
     }
     match x {
@@ -467,7 +469,7 @@ impl Bot {
                                 }).map(|x| x.name.clone()).collect::<Vec<_>>();
                                 EXTRA.insert(thread.id.get(), Ch { repo, d, ty: Type::Owned(tg) });   
                             }
-                            FullEvent::MessageUpdate {event: MessageUpdateEvent {
+                            FullEvent::MessageUpdate {old_if_available, new, event:e@ MessageUpdateEvent {
                                 author: Some(author),
                                 guild_id: Some(guild_id),
                                 content: Some(content),
@@ -483,6 +485,7 @@ impl Bot {
                                     .await
                                     .unwrap_or(author.name.clone());
                                     let (dir, l, repo) = sep(SPECIAL.get(&r.channel_id.get()));
+                                    println!("schematic with; edit ({old_if_available:?} {new:?} {e:?})");
                                     if let ControlFlow::Break((m,_,s)) = schematic::with(
                                         Msg {
                                             locale:author.locale.clone().unwrap_or("unknown locale".to_string()),

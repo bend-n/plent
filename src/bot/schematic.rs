@@ -113,10 +113,9 @@ pub async fn send(
     v: Schem,
 ) -> Result<(poise::serenity_prelude::Message, std::string::String, Schem)> {
     let name = emoji::mindustry::to_discord(&strip_colors(v.tags.get("name").unwrap()));
-    println!("deser {name}");
     let vclone = v.clone();
+    println!("rend {name} (shard# {})", c.shard_id.0);
     let p = tokio::task::spawn_blocking(move || to_png(&vclone)).await?;
-    println!("rend {name}");
     let msg = CreateMessage::new()
         .add_file(CreateAttachment::bytes(p, "image.png"))
         .embed(e(&m.author, &m.avatar, &v).title(name.clone()));
