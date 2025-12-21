@@ -8,6 +8,7 @@ use mindus::data::schematic::R64Error;
 use mindus::*;
 use poise::{CreateReply, serenity_prelude::*};
 use regex::Regex;
+use std::hash::BuildHasher;
 use std::ops::ControlFlow;
 use std::sync::LazyLock;
 use std::{fmt::Write, ops::Deref};
@@ -18,6 +19,7 @@ static RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?").unwrap()
 });
 
+#[derive(Hash)]
 pub struct Schem {
     pub schem: Schematic,
 }
@@ -125,9 +127,8 @@ pub async fn send(
 
 pub async fn with(
     m: Msg,
-    c: &serenity::client::Context,
     labels: Option<super::Type>,
-) -> Result<ControlFlow<(Message, String, Schem), ()>> {
+) -> Result<ControlFlow<(u64, Msg, Schem), ()>> {
     if let Ok(Some(mut v)) = from((&m.content, &m.attachments)).await {
         super::data::push_j(serde_json::json! {{
         "locale": m.locale,
@@ -165,7 +166,8 @@ pub async fn with(
             };
             v.schem.tags.insert("labels".into(), x);
         };
-        return Ok(ControlFlow::Break(send(m, c, v).await?));
+        let ha = rustc_hash::FxBuildHasher::default().hash_one(&v);
+        return Ok(ControlFlow::Break((ha, m, v)));
     }
 
     Ok(ControlFlow::Continue(()))

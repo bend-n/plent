@@ -54,7 +54,7 @@ pub fn clone() {
 #[derive(Debug)]
 pub struct Data {
     // message -> resp
-    tracker: Arc<DashMap<MessageId, Message>>,
+    tracker: Arc<DashMap<MessageId, (u64, Message)>>,
 }
 #[derive(Clone)]
 pub struct Msg {
@@ -279,13 +279,11 @@ async fn handle_message(
             ..m.clone()
         };
         if x.is_continue() {
-            println!("schematic with; forward");
-            x = schematic::with(m, c, l.clone()).await?;
+            x = schematic::with(m, l.clone()).await?;
         };
     }
     if x.is_continue() {
-        println!("schematic with; attached");
-        x = schematic::with(m, c, l).await?;
+        x = schematic::with(m, l).await?;
     }
     match x {
         ControlFlow::Continue(())
@@ -295,7 +293,8 @@ async fn handle_message(
             new_message.delete(c).await?;
             return Ok(());
         }
-        ControlFlow::Break((m, n, s)) => {
+        ControlFlow::Break((ha, m, s)) => {
+            let (m, n, s) = schematic::send(m,c,s).await?;
             if SPECIAL.contains_key(&m.channel_id.get()) || THREADED.contains(&m.channel_id.get()) {
                 m.channel_id
                     .create_thread_from_message(
@@ -336,7 +335,7 @@ async fn handle_message(
                 repo.push();
                 new_message.react(c, emojis::get!(MERGE)).await?;
             }
-            d.tracker.insert(new_message.id, m);
+            d.tracker.insert(new_message.id, (ha, m));
             return Ok(());
         }
         _ => (),
@@ -469,7 +468,7 @@ impl Bot {
                                 }).map(|x| x.name.clone()).collect::<Vec<_>>();
                                 EXTRA.insert(thread.id.get(), Ch { repo, d, ty: Type::Owned(tg) });   
                             }
-                            FullEvent::MessageUpdate {old_if_available, new, event:e@ MessageUpdateEvent {
+                            FullEvent::MessageUpdate {event:MessageUpdateEvent {
                                 author: Some(author),
                                 guild_id: Some(guild_id),
                                 content: Some(content),
@@ -478,15 +477,14 @@ impl Bot {
                                 channel_id,
                                 ..
                             }, ..} => {
-                                if let Some((_, r)) = d.tracker.remove(id) {
+                                if let Some((_, (hash, r))) = d.tracker.remove(id) {
                                     _ = r.delete(c).await;
                                     let who = author
                                     .nick_in(c, guild_id)
                                     .await
                                     .unwrap_or(author.name.clone());
                                     let (dir, l, repo) = sep(SPECIAL.get(&r.channel_id.get()));
-                                    println!("schematic with; edit ({old_if_available:?} {new:?} {e:?})");
-                                    if let ControlFlow::Break((m,_,s)) = schematic::with(
+                                    if let ControlFlow::Break((ha, m, v)) = schematic::with(
                                         Msg {
                                             locale:author.locale.clone().unwrap_or("unknown locale".to_string()),
                                             author_id: author.id.get(),
@@ -497,12 +495,11 @@ impl Bot {
                                             attachments:attachments.clone(),
                                             channel: *channel_id,
                                         },
-                                        c,
                                         l
                                     )
-                                    .await?
-                                    {
-                                        d.tracker.insert(*id, m);
+                                    .await? && ha != hash {
+                                        let (m, _, s) = schematic::send(m,c, v).await?;
+                                        d.tracker.insert(*id, (ha, m));
                                         if let Some(dir) = dir && let Some(git) = repo && git.has(dir, *id) {
                                             // update :)
                                             if *guild_id == 925674713429184564 && !cfg!(debug_assertions) {
@@ -533,7 +530,7 @@ impl Bot {
                                     _ = db::remove(channel_id.get());
                                     del(&c, ch, deleted_message_id.get()).await;
                                 }
-                                if let Some((_, r)) = d.tracker.remove(deleted_message_id) {
+                                if let Some((_, (_, r))) = d.tracker.remove(deleted_message_id) {
                                     r.delete(c).await.unwrap();
                                 }
                             }
@@ -588,7 +585,7 @@ impl Bot {
                         loop {
                             // every 10 minutes
                             tokio::time::sleep(Duration::from_secs(60 * 10)).await;
-                            tc.retain(|_, v: &mut Message| {
+                            tc.retain(|_, (_, v): &mut (_, Message)| {
                                 // prune messagees older than 3 hours
                                 Timestamp::now().unix_timestamp() - v.timestamp.unix_timestamp()
                                     < 60 * 60 * 3
