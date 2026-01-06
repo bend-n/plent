@@ -478,7 +478,6 @@ impl Bot {
                                 ..
                             }, ..} => {
                                 if let Some((_, (hash, r))) = d.tracker.remove(id) {
-                                    _ = r.delete(c).await;
                                     let who = author
                                     .nick_in(c, guild_id)
                                     .await
@@ -498,6 +497,7 @@ impl Bot {
                                         l
                                     )
                                     .await? && ha != hash {
+                                        _ = r.delete(c).await;
                                         let (m, _, s) = schematic::send(m,c, v).await?;
                                         d.tracker.insert(*id, (ha, m));
                                         if let Some(dir) = dir && let Some(git) = repo && git.has(dir, *id) {

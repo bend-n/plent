@@ -22,7 +22,8 @@ serenity = { version = "0.12", features = [
 poise = { git = "https://github.com/serenity-rs/poise", branch = "current" }
 anyhow = "1.0.75"
 regex = { version = "1.8.4", features = ["std"], default-features = false }
-mindus = { version = "5.0.7", features = [], default-features = false }
+mindus = { git = "https://github.com/bend-n/mindus", features = [
+], default-features = false }
 lemu = { features = [
   "diagnose",
 ], default-features = false, git = "https://github.com/bend-n/mindus" }
@@ -68,6 +69,7 @@ charts-rs = { version = "0.3.24", features = [
   "image-encoder",
   "resvg",
 ] }
+rustc-hash = "2.1.1"
 
 [features]
 server = ["axum"]
