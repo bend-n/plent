@@ -1,16 +1,18 @@
 #![allow(incomplete_features)]
 #![feature(
     try_blocks,
-    let_chains,
+    try_blocks_heterogeneous,
+    const_array,
+    const_closures,
     generic_const_exprs,
     iter_intersperse,
-    if_let_guard,
-    backtrace_frames,
     const_trait_impl
 )]
 emojib::the_crate! {}
 
-use std::{net::SocketAddr, sync::OnceLock, time::Instant};
+use std::{sync::OnceLock, time::Instant};
+
+// use crate::bot::stats_;
 #[cfg(feature = "server")]
 mod expose;
 #[macro_use]
@@ -18,6 +20,8 @@ mod bot;
 static START: OnceLock<Instant> = OnceLock::new();
 #[tokio::main(flavor = "current_thread")]
 async fn main() {
+    // crate::bot::stats_(None).await.3.save("what.png");
+    // return;
     println!("check clones");
     bot::clone();
     START.get_or_init(Instant::now);

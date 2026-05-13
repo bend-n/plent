@@ -9,16 +9,18 @@ pub mod search;
 mod sorter;
 use charts_rs::{Series, THEME_GRAFANA};
 pub use data::log;
+use fimg::{Image, OverlayAt, WritePng};
+use once_cell::sync::OnceCell;
 
 use crate::emoji;
-use anyhow::Result;
+use anyhow::{Result, anyhow};
+use core::panic;
 use dashmap::DashMap;
 use mindus::Serializable;
 use mindus::data::DataWrite;
 use poise::{CreateReply, serenity_prelude::*};
 use repos::{FORUMS, Repo, SPECIAL, THREADED};
 use serenity::futures::StreamExt;
-use core::panic;
 use std::collections::{HashMap, HashSet};
 use std::fmt::Write;
 use std::fs::read_to_string;
@@ -106,21 +108,16 @@ enum Type {
 }
 impl Type {
     fn r(&self) -> Option<String> {
-     match self {
+        match self {
             Type::Basic(x) => Some(tags(x)),
             Type::Forum(_) => None,
             Type::Owned(x) => Some(tags(x)),
         }
-
     }
 }
 
 fn sep(x: Option<&Ch>) -> (Option<&'static str>, Option<Type>, Option<&Repo>) {
-    (
-        x.map(|x| x.d),
-        x.map(|x| x.ty.clone()),
-        x.map(|x| x.repo),
-    )
+    (x.map(|x| x.d), x.map(|x| x.ty.clone()), x.map(|x| x.repo))
 }
 
 const OWNER: u64 = 696196765564534825;
@@ -147,13 +144,18 @@ pub async fn scour(
                 if let Ok(Some(mut x)) = schematic::from((&msg.content, &msg.attachments)).await {
                     use emoji::to_mindustry::named::*;
                     let tags = if tg == &["find unit factory"] {
-                        tags(&[x.block_iter().find_map(|x| match x.1.block.name() {
-                            "air-factory" => Some(AIR_FACTORY),
-                            "ground-factory" => Some(GROUND_FACTORY),
-                            "naval-factory" => Some(NAVAL_FACTORY),
-                            _ => None,
-                        }).unwrap_or(AIR_FACTORY)])
-                    } else { tags(tg) };
+                        tags(&[x
+                            .block_iter()
+                            .find_map(|x| match x.1.block.name() {
+                                "air-factory" => Some(AIR_FACTORY),
+                                "ground-factory" => Some(GROUND_FACTORY),
+                                "naval-factory" => Some(NAVAL_FACTORY),
+                                _ => None,
+                            })
+                            .unwrap_or(AIR_FACTORY)])
+                    } else {
+                        tags(tg)
+                    };
                     x.schem.tags.insert("labels".into(), tags.clone());
                     let who = msg.author_nick(c).await.unwrap_or(msg.author.name.clone());
                     ownership::get(repo)
@@ -294,7 +296,7 @@ async fn handle_message(
             return Ok(());
         }
         ControlFlow::Break((ha, m, s)) => {
-            let (m, n, s) = schematic::send(m,c,s).await?;
+            let (m, n, s) = schematic::send(m, c, s).await?;
             if SPECIAL.contains_key(&m.channel_id.get()) || THREADED.contains(&m.channel_id.get()) {
                 m.channel_id
                     .create_thread_from_message(
@@ -331,7 +333,11 @@ async fn handle_message(
                 }
                 repo.write(dir, new_message.id, s);
                 repo.add();
-                repo.commit(&who, new_message.author.id, &format!("add {:x}.msch", new_message.id.get()));
+                repo.commit(
+                    &who,
+                    new_message.author.id,
+                    &format!("add {:x}.msch", new_message.id.get()),
+                );
                 repo.push();
                 new_message.react(c, emojis::get!(MERGE)).await?;
             }
@@ -650,18 +656,22 @@ pub async fn retag(c: Context<'_>) -> Result<()> {
         return Ok(());
     }
     c.defer().await?;
-    for (&channel, x) in repos::SPECIAL.into_iter().filter(|x| {
-        x.1.repo == &repos::DESIGN_IT
-    }) { 
-        let (_, Some(tags), _) = sep(Some(x)) else { panic!() };
+    for (&channel, x) in repos::SPECIAL
+        .into_iter()
+        .filter(|x| x.1.repo == &repos::DESIGN_IT)
+    {
+        let (_, Some(tags), _) = sep(Some(x)) else {
+            panic!()
+        };
         let Some(tags) = tags.r() else { panic!() };
-    for schem in search::dir(channel).into_iter().flatten() {
-        let mut s = search::load(&schem);
-        let mut v = DataWrite::default();
-        s.tags.insert("labels".into(), tags.clone());
-        s.serialize(&mut v)?;
-        std::fs::write(schem, v.consume())?;
-    }}
+        for schem in search::dir(channel).into_iter().flatten() {
+            let mut s = search::load(&schem);
+            let mut v = DataWrite::default();
+            s.tags.insert("labels".into(), tags.clone());
+            s.serialize(&mut v)?;
+            std::fs::write(schem, v.consume())?;
+        }
+    }
     c.reply(emoji::named::OK).await?;
     Ok(())
 }
@@ -1124,11 +1134,12 @@ pub async fn schembrowser_instructions(c: Context<'_>) -> Result<()> {
     Ok(())
 }
 
-#[poise::command(slash_command)]
-/// Statistics
-#[implicit_fn::implicit_fn]
-pub async fn stats(c: Context<'_>) -> Result<()> {
+// #[implicit_fn::implicit_fn]
+pub async fn stats_(c: Option<Context<'_>>) -> (u32, u32, u32, fimg::Image<Vec<u8>, 3>) {
     let mut guilds = HashMap::<_, u64>::default();
+    let mut users = HashMap::<_, u64>::default();
+    let mut name = HashMap::<_, _>::default();
+    users.insert(1059835029817135205u64, u64::MAX - 1300);
     let mut schem_calls = 0;
     let mut map_calls = 0;
     let mut eval_calls = 0;
@@ -1138,48 +1149,151 @@ pub async fn stats(c: Context<'_>) -> Result<()> {
         .map(serde_json::from_str::<serde_json::Value>)
         .filter_map(Result::ok)
     {
-        *guilds
-            .entry(x.get("guild").unwrap().as_u64().unwrap())
-            .or_default() += 1;
-        let x = x.get("cname").unwrap().as_str().unwrap();
-        if x.contains("schematic") {
-            schem_calls += 1;
+        if try bikeshed Option<()> {
+            *guilds.entry(x.get("guild")?.as_u64()?).or_default() += 1;
+            let id = try { (&x).get("id")?.as_str()?.parse::<u64>().ok()? }
+                .or_else(|| x.get("id")?.as_u64())?;
+            lower::wrapping::math! { *users.entry(id).or_default() += 1 };
+            name.entry(id)
+                .insert_entry((x.get("name"))?.as_str()?.to_string());
+            let x = x.get("cname")?.as_str()?;
+            if x.contains("schematic") {
+                schem_calls += 1;
+            }
+            if x.contains("map") {
+                map_calls += 1;
+            }
+            if x.contains("eval") {
+                eval_calls += 1;
+            }
         }
-        if x.contains("map") {
-            map_calls += 1;
-        }
-        if x.contains("eval") {
-            eval_calls += 1;
+        .is_none()
+        {
+            // println!("fail {x:?}");
         }
     }
     use futures::stream;
-
-    let mut x = stream::iter(guilds.into_iter().filter(_.0 != 0).filter(_.1 > 25))
-        .map(async |(k, v)| {
-            GuildId::new(k)
+    let t = schem_calls + map_calls + eval_calls;
+    let mut x = stream::iter(
+        guilds
+            .into_iter()
+            .filter(|x| x.1 > (schem_calls as f32 * 0.01) as u64),
+    )
+    .map(async |(k, mut v)| {
+        if k == 0 {
+            return ("DM".to_string(), v);
+        }
+        if k == 1216831872449904701 {
+            v -= 1317;
+        }
+        match c {
+            Some(c) => GuildId::new(k)
                 .to_partial_guild(c.http())
                 .await
                 .map(|x| (x.name, v))
-                .unwrap_or(("DM".to_string(), v))
-        })
-        .buffer_unordered(16)
-        .collect::<Vec<_>>()
-        .await
-        .into_iter()
-        .map(|(a, b)| Series::new(a, vec![b as f32]))
-        .collect::<Vec<_>>();
+                .ok(),
+            None => None,
+        }
+        .unwrap_or(("DM".to_string(), v))
+    })
+    .buffer_unordered(16)
+    .collect::<Vec<_>>()
+    .await
+    .into_iter()
+    .map(|(a, b)| Series::new(a, vec![(b as f32 / t as f32) * 100.]))
+    .collect::<Vec<_>>();
     x.sort_by_key(|x| x.data[0] as u64);
 
-    let mut ch = charts_rs::PieChart::new_with_theme(x, THEME_GRAFANA);
-    ch.title_text = "usage".into();
-    // ch.font_family = "Verdana".into();
-    ch.width = 800.0;
-    ch.rose_type = Some(false);
-    ch.inner_radius = 20.0;
-    ch.height = 300.0;
+    let mut y = users
+        .into_iter()
+        .filter(|x| x.1 > (schem_calls as f32 * 0.005) as u64)
+        .filter_map(|(k, v)| Some((name.get(&k)?, v)))
+        .map(|(a, b)| Series::new(a.to_string(), vec![b as f32]))
+        .collect::<Vec<_>>();
+    y.sort_by_key(|x| x.data[0] as u64);
 
+    let mut byguild = charts_rs::PieChart::new_with_theme(x, THEME_GRAFANA);
+    // let mut ch = charts_rs::PieChart::new_with_theme(x, THEME_GRAFANA);
+    byguild.title_text = "usage by guild".into();
+    byguild.font_family = "Verdana".into();
+    byguild.width = 800.0 + 200.;
+    byguild.rose_type = Some(false);
+    byguild.inner_radius = 80.0;
+    byguild.height = 300.0 + 500.;
+    byguild.radius = 300.0;
+    byguild.series_label_formatter = "{a}: {c}%".into();
+    let mut byperson = charts_rs::PieChart::new_with_theme(y, THEME_GRAFANA);
+    // let mut ch = charts_rs::PieChart::new_with_theme(x, THEME_GRAFANA);
+    byperson.title_text = "usage by user".into();
+    byperson.font_family = "Verdana".into();
+    byperson.width = 800.0 + 200.;
+    byperson.rose_type = Some(false);
+    byperson.inner_radius = 100.0;
+    byperson.border_radius = None;
+    byperson.height = 300.0 + 500.;
+    byperson.radius = 300.0;
+    byperson.series_label_formatter = "{a}: {t}".into();
+    byperson.series_label_font_size = 7.;
+    let byguild = rnd_svg(&byguild.svg().unwrap()).unwrap();
+    let byperson = rnd_svg(&byperson.svg().unwrap()).unwrap();
+
+    let mut new = Image::build(byperson.width(), byperson.height() + byguild.height()).alloc();
+    unsafe { new.overlay_at(&byguild, 0, 0) };
+    unsafe { new.overlay_at(&byperson, 0, byguild.height()) };
+    (
+        schem_calls,
+        map_calls,
+        eval_calls,
+        new, // charts_rs::svg_to_webp(&byperson.svg().unwrap()).unwrap(),
+             //  charts_rs::svg_to_webp(&byguild.svg().unwrap()).unwrap(),
+    )
+}
+pub(crate) fn get_or_init_fontdb(fonts: Option<Vec<&[u8]>>) -> Arc<fontdb::Database> {
+    static GLOBAL_FONT_DB: OnceCell<Arc<fontdb::Database>> = OnceCell::new();
+    GLOBAL_FONT_DB
+        .get_or_init(|| {
+            let mut fontdb = fontdb::Database::new();
+            if let Some(value) = fonts {
+                for item in value.iter() {
+                    fontdb.load_font_data((*item).to_vec());
+                }
+            } else {
+                fontdb.load_system_fonts();
+            }
+            Arc::new(fontdb)
+        })
+        .clone()
+}
+
+pub fn rnd_svg(x: &str) -> Result<fimg::Image<Vec<u8>, 4>> {
+    // let fontdb = get_or_init_fontdb(None);
+    let tree = usvg::Tree::from_str(
+        x,
+        &usvg::Options {
+            fontdb: get_or_init_fontdb(None),
+            ..Default::default()
+        },
+    )?;
+    let pixmap_size = tree.size().to_int_size();
+    let mut pixmap =
+        tiny_skia::Pixmap::new(pixmap_size.width(), pixmap_size.height()).ok_or(anyhow!("hmm"))?;
+    resvg::render(&tree, tiny_skia::Transform::default(), &mut pixmap.as_mut());
+
+    let data = pixmap.data().to_vec();
+    // let size = data.len();
+    Ok(fimg::Image::build(pixmap.width(), pixmap.height()).buf(data))
+}
+
+#[poise::command(slash_command)]
+/// Statistics
+#[implicit_fn::implicit_fn]
+pub async fn stats(c: Context<'_>) -> Result<()> {
+    c.defer().await?;
+    let (schem_calls, map_calls, eval_calls, x) = stats_(Some(c)).await;
+    let mut v = vec![];
+    x.write(&mut v).unwrap();
     use emoji::named::*;
-    let x = charts_rs::svg_to_webp(&ch.svg().unwrap()).unwrap();
-    poise::send_reply(c, poise::CreateReply::default().attachment(CreateAttachment::bytes(x, "chart.webp")).content(format!("{EDIT} total schematics rendered: {schem_calls}\n{MAP} total maps rendered: {map_calls}\n{WORLD_PROCESSOR} eval calls: {eval_calls}"))).await?;
+    poise::send_reply(c, poise::CreateReply::default().attachment(CreateAttachment::bytes(v, "chart.png")).content(
+        format!("{EDIT} total schematics rendered: {schem_calls}\n{MAP} total maps rendered: {map_calls}\n{WORLD_PROCESSOR} eval calls: {eval_calls}"))).await?;
     Ok(())
 }

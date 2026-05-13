@@ -29,7 +29,7 @@ lemu = { features = [
 ], default-features = false, git = "https://github.com/bend-n/mindus" }
 dashmap = "5.5.3"
 oxipng = { version = "9.0.0", default-features = false }
-fimg = { version = "0.4.26", features = ["save"] }
+fimg = { version = "0.4.52", features = ["save"] }
 phf = { version = "0.11.2", features = ["macros"] }
 emojib = { git = "https://github.com/Apricot-Conservation-Project/emoji", package = "emoji" }
 rust-fuzzy-search = "0.1.1"
@@ -70,6 +70,12 @@ charts-rs = { version = "0.3.24", features = [
   "resvg",
 ] }
 rustc-hash = "2.1.1"
+usvg = "0.47.0"
+tiny-skia = "0.12.0"
+resvg = "0.47.0"
+fontdb = "0.23.0"
+once_cell = "1.21.4"
+lower = "0.2.1"
 
 [features]
 server = ["axum"]
@@ -90,7 +96,7 @@ debug-assertions = false
 
 [profile.dev.package.fimg]
 opt-level = 3
-debug-assertions = false
+debug-assertions = true
 
 [patch.crates-io]
 serenity = { git = "https://github.com/serenity-rs/serenity" }
