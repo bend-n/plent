@@ -1198,11 +1198,12 @@ pub async fn stats_(c: Option<Context<'_>>) -> (u32, u32, u32, fimg::Image<Vec<u
     })
     .buffer_unordered(16)
     .collect::<Vec<_>>()
-    .await
-    .into_iter()
+    .await;
+    x.sort_by_key(|x| x.1);
+    let x = x.into_iter()
     .map(|(a, b)| Series::new(a, vec![(b as f32 / t as f32) * 100.]))
     .collect::<Vec<_>>();
-    x.sort_by_key(|x| x.data[0] as u64);
+    
 
     let mut y = users
         .into_iter()

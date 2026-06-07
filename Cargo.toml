@@ -4,8 +4,8 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-paste = "1.0.12"
-tokio = { version = "1.28.2", features = [
+paste = "1.0.15"
+tokio = { version = "1.52.3", features = [
   "net",
   "sync",
   "rt",
@@ -20,56 +20,56 @@ serenity = { version = "0.12", features = [
   "model",
 ], default-features = false }
 poise = { git = "https://github.com/serenity-rs/poise", branch = "current" }
-anyhow = "1.0.75"
-regex = { version = "1.8.4", features = ["std"], default-features = false }
+anyhow = "1.0.102"
+regex = { version = "1.12.3", features = ["std"], default-features = false }
 mindus = { git = "https://github.com/bend-n/mindus", features = [
 ], default-features = false }
 lemu = { features = [
   "diagnose",
 ], default-features = false, git = "https://github.com/bend-n/mindus" }
 dashmap = "5.5.3"
-oxipng = { version = "9.0.0", default-features = false }
-fimg = { version = "0.4.52", features = ["save"] }
-phf = { version = "0.11.2", features = ["macros"] }
+oxipng = { version = "9.1.5", default-features = false }
+fimg = { version = "0.4.55", features = ["save"] }
+phf = { version = "0.11.3", features = ["macros"] }
 emojib = { git = "https://github.com/Apricot-Conservation-Project/emoji", package = "emoji" }
 rust-fuzzy-search = "0.1.1"
 jemallocator-global = "0.3.2"
-const_format = { version = "0.2.32", features = ["fmt"] }
-logos = "0.14.0"
+const_format = { version = "0.2.36", features = ["fmt"] }
+logos = "0.14.4"
 base64 = "0.21.7"
-humantime = "2.1.0"
-memory-stats = { version = "1.1.0", features = ["always_use_statm"] }
-axum = { version = "0.6.18", features = [
+humantime = "2.3.0"
+memory-stats = { version = "1.2.0", features = ["always_use_statm"] }
+axum = { version = "0.6.20", features = [
   "tokio",
   "http1",
   "macros",
 ], default-features = false, optional = true }
-serde_json = "1.0.122"
-serde = "1.0.204"
-atools = "0.1.5"
+serde_json = "1.0.150"
+serde = "1.0.228"
+atools = "0.1.12"
 httpdate = "1.0.3"
 pollster = "0.3.0"
 btparse-stable = "0.1.2"
 cpu-monitor = "0.1.1"
 exoquant = "0.2.0"
-image = { version = "0.25.5", features = [
+image = { version = "0.25.10", features = [
   "bmp",
   "jpeg",
   "png",
   "webp",
 ], default-features = false }
-car = "0.1.1"
+car = "0.1.4"
 kv = "0.24.0"
 sled = { version = "0.34.7", features = ["compression"] }
 remapper = { version = "0.1.0", path = "../remapper" }
 implicit-fn = "0.1.0"
 sql = "0.4.3"
-charts-rs = { version = "0.3.24", features = [
+charts-rs = { version = "0.3.28", features = [
   "image",
   "image-encoder",
   "resvg",
 ] }
-rustc-hash = "2.1.1"
+rustc-hash = "2.1.2"
 usvg = "0.47.0"
 tiny-skia = "0.12.0"
 resvg = "0.47.0"
